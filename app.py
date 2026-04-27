@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
 import time
 
 from sklearn.model_selection import train_test_split
@@ -11,7 +12,9 @@ from sklearn.metrics import confusion_matrix
 
 st.set_page_config(layout="wide")
 
-# ------------------ PREMIUM CSS ------------------
+API_KEY = "efd7a881ace6419480e100155251006"
+
+# ------------------ UI ------------------
 st.markdown("""
 <style>
 .stApp {
@@ -20,7 +23,7 @@ st.markdown("""
 }
 .title {
     text-align:center;
-    font-size:40px;
+    font-size:38px;
     color:#38bdf8;
 }
 .card {
@@ -30,11 +33,6 @@ st.markdown("""
     text-align:center;
     backdrop-filter: blur(10px);
     box-shadow:0 0 20px rgba(0,0,0,0.5);
-}
-.sun {font-size:60px; animation: glow 2s infinite alternate;}
-@keyframes glow {
-    from {text-shadow:0 0 10px yellow;}
-    to {text-shadow:0 0 30px orange;}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -95,52 +93,101 @@ def ml_predict(temp, wind):
 
     return le.inverse_transform(pred)[0], np.max(prob)
 
-# ------------------ AQI LOGIC ------------------
-def get_aqi():
-    aqi = np.random.randint(40,150)
+# ------------------ API MODE ------------------
+def get_weather_api(city):
+    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}&aqi=yes"
+    res = requests.get(url).json()
 
-    if aqi <= 50:
-        status = "🟢 Good"
-        msg = "Air quality is clean and safe."
-    elif aqi <= 100:
-        status = "🟡 Moderate"
-        msg = "Acceptable but sensitive people be careful."
+    temp = res["current"]["temp_c"]
+    humidity = res["current"]["humidity"]
+    condition = res["current"]["condition"]["text"].lower()
+
+    if "rain" in condition:
+        pred = "rain"
+    elif "cloud" in condition:
+        pred = "cloudy"
     else:
-        status = "🔴 Unhealthy"
-        msg = "Health risk, avoid outdoor activity."
+        pred = "sun"
 
-    return aqi, status, msg
+    try:
+        aqi = res["current"]["air_quality"]["pm2_5"]
+    except:
+        aqi = 80
 
-# ------------------ OFFLINE MODE ------------------
-st.subheader("💻 Offline Weather Prediction (ML Model)")
+    return temp, humidity, pred, aqi
 
-temp = st.slider("🌡 Temperature (°C)", 0, 50, 25)
-wind = st.slider("🌪 Wind Speed", 0, 50, 10)
+# ------------------ MODE ------------------
+mode = st.radio("Select Mode", ["🌐 Online (API)", "💻 Offline (ML)"])
+city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
 
-if st.button("🚀 Predict Weather"):
+# ------------------ ONLINE ------------------
+if mode == "🌐 Online (API)":
+    if st.button("🌍 Get Live Weather"):
 
-    pred, conf = ml_predict(temp, wind)
+        temp, humidity, pred, aqi = get_weather_api(city)
 
-    # ICONS
-    if pred == "rain":
-        icon = "🌧️"
-        color = "#14532d"
-    elif pred == "sun":
-        icon = "<div class='sun'>☀️</div>"
-        color = "#1e3a8a"
-    else:
-        icon = "☁️"
-        color = "#78350f"
+        st.subheader("🌐 Real-Time Weather")
 
-    st.markdown(f"<h1 style='text-align:center'>{icon} {pred.upper()}</h1>", unsafe_allow_html=True)
-    st.success(f"Confidence: {round(conf,2)}")
+        col1, col2 = st.columns(2)
+        col1.metric("🌡 Temp", f"{temp}°C")
+        col2.metric("💧 Humidity", f"{humidity}%")
 
-    # ------------------ AQI ------------------
-    aqi, status, msg = get_aqi()
+        if pred == "rain":
+            st.success("🌧️ Rain Expected")
+        elif pred == "sun":
+            st.success("☀️ Clear Weather")
+        else:
+            st.success("☁️ Cloudy")
 
-    st.markdown("### 🌫 Air Quality Index (AQI)")
-    st.markdown(f"<div class='card'>AQI: {aqi} <br>{status}</div>", unsafe_allow_html=True)
-    st.write(msg)
+        # AQI
+        if aqi <= 50:
+            status = "🟢 Good"
+            msg = "Air is clean"
+        elif aqi <= 100:
+            status = "🟡 Moderate"
+            msg = "Acceptable air"
+        else:
+            status = "🔴 Unhealthy"
+            msg = "Avoid outdoor activity"
+
+        st.markdown("### 🌫 AQI (Live)")
+        st.info(f"AQI: {round(aqi)} | {status}")
+        st.write(msg)
+
+# ------------------ OFFLINE ------------------
+if mode == "💻 Offline (ML)":
+    temp = st.slider("🌡 Temperature", 0, 50, 25)
+    wind = st.slider("🌪 Wind", 0, 50, 10)
+
+    if st.button("🤖 Predict (ML)"):
+
+        pred, conf = ml_predict(temp, wind)
+
+        if pred == "rain":
+            st.success("🌧️ Rain Expected")
+        elif pred == "sun":
+            st.success("☀️ Clear Weather")
+        else:
+            st.success("☁️ Cloudy")
+
+        st.write(f"Confidence: {round(conf,2)}")
+
+        # Simulated AQI
+        aqi = np.random.randint(40,150)
+
+        if aqi <= 50:
+            status = "🟢 Good"
+            msg = "Air quality is safe"
+        elif aqi <= 100:
+            status = "🟡 Moderate"
+            msg = "Sensitive people be careful"
+        else:
+            status = "🔴 Unhealthy"
+            msg = "Avoid outdoor exposure"
+
+        st.markdown("### 🌫 AQI (Estimated)")
+        st.info(f"AQI: {aqi} | {status}")
+        st.write(msg)
 
 # ------------------ PERFORMANCE ------------------
 st.subheader("📊 Model Performance")
