@@ -1,28 +1,21 @@
 import numpy as np
-from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-
-X = np.random.rand(200, 4)
-y = np.random.randint(0, 2, 200)
-
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-svm = SVC(probability=True)
-rf = RandomForestClassifier()
-
-svm.fit(X_scaled, y)
-rf.fit(X_scaled, y)
 
 def predict_weather(input_data):
-    data = scaler.transform([input_data])
+    temp, humidity, pressure, wind = input_data
 
-    svm_prob = svm.predict_proba(data)[0]
-    rf_prob = rf.predict_proba(data)[0]
+    # Simple realistic logic
+    rain_score = 0
 
-    hybrid_prob = 0.5 * svm_prob + 0.5 * rf_prob
+    if humidity > 70:
+        rain_score += 1
+    if pressure < 1005:
+        rain_score += 1
+    if wind > 15:
+        rain_score += 1
 
-    prediction = np.argmax(hybrid_prob)
+    prob = rain_score / 3
 
-    return prediction, hybrid_prob[prediction]
+    if prob > 0.5:
+        return 1, prob
+    else:
+        return 0, 1 - prob
