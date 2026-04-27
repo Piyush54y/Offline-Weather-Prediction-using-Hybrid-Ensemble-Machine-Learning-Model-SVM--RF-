@@ -14,22 +14,25 @@ st.set_page_config(layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
-st.title("🌦️ Weather Prediction System (Hybrid + API)")
+st.title("🌦️ Weather Prediction System")
 
-# ------------------ LOAD DATA ------------------
+# ------------------ LOAD YOUR CSV ------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("seattle-weather.csv")
+    df = pd.read_csv("weather.csv")   # 🔥 YOUR FILE
     return train_test_split(df, test_size=0.2, random_state=42)
 
 train_df, test_df = load_data()
 
 # ------------------ FEATURE ENGINEERING ------------------
+# (adjust if your CSV columns differ)
+
 for df in [train_df, test_df]:
     df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
     df["temp_range"] = df["temp_max"] - df["temp_min"]
     df["month"] = pd.to_datetime(df["date"]).dt.month
 
+# ------------------ ENCODING ------------------
 le = LabelEncoder()
 train_df["weather"] = le.fit_transform(train_df["weather"])
 test_df["weather"] = le.transform(test_df["weather"])
@@ -52,8 +55,8 @@ X_test = scaler.transform(X_test)
 def train_models():
     start = time.time()
 
-    rf = RandomForestClassifier(n_estimators=500, max_depth=15, random_state=42)
-    svm = SVC(probability=True, C=20, gamma=0.05)
+    rf = RandomForestClassifier(n_estimators=300, max_depth=12)
+    svm = SVC(probability=True, C=10, gamma=0.1)
 
     rf.fit(X_train, y_train)
     svm.fit(X_train, y_train)
@@ -62,16 +65,15 @@ def train_models():
 
 rf, svm, train_time = train_models()
 
-# ------------------ HYBRID MODEL ------------------
+# ------------------ HYBRID ------------------
 def hybrid_predict(X):
     rf_prob = rf.predict_proba(X)
     svm_prob = svm.predict_proba(X)
 
-    # Paper-based fusion
-    hybrid_prob = (rf_prob + svm_prob) / 2
-    pred = np.argmax(hybrid_prob, axis=1)
+    prob = (rf_prob + svm_prob) / 2
+    pred = np.argmax(prob, axis=1)
 
-    return pred, hybrid_prob
+    return pred, prob
 
 # ------------------ ACCURACY ------------------
 rf_acc = rf.score(X_test, y_test)
@@ -82,57 +84,42 @@ hybrid_acc = accuracy_score(y_test, hybrid_pred)
 
 # ------------------ API ------------------
 def get_weather_api(city):
-    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}&aqi=yes"
+    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
     data = requests.get(url).json()
 
     temp = data["current"]["temp_c"]
     humidity = data["current"]["humidity"]
-    condition = data["current"]["condition"]["text"].lower()
+    condition = data["current"]["condition"]["text"]
 
-    # Simple interpretation
-    if "rain" in condition:
-        pred = "rain"
-    elif "cloud" in condition:
-        pred = "cloudy"
-    else:
-        pred = "sun"
-
-    return temp, humidity, condition, pred
+    return temp, humidity, condition
 
 # ------------------ MODE ------------------
-mode = st.radio("Select Mode", ["🌐 Online (API)", "💻 Offline (Hybrid ML)"])
+mode = st.radio("Select Mode", ["🌐 Online (API)", "💻 Offline (ML)"])
 city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
 
 # =========================================================
-# 🌐 ONLINE MODE (API ONLY)
+# 🌐 ONLINE MODE
 # =========================================================
 if mode == "🌐 Online (API)":
 
     if st.button("🌍 Get Live Weather"):
 
-        temp, humidity, condition, pred = get_weather_api(city)
+        temp, humidity, condition = get_weather_api(city)
 
-        st.subheader("🌐 Real-Time Weather (API)")
+        st.subheader("🌐 Real-Time Weather")
 
         c1, c2 = st.columns(2)
-        c1.metric("🌡 Temperature", f"{temp}°C")
+        c1.metric("🌡 Temp", f"{temp}°C")
         c2.metric("💧 Humidity", f"{humidity}%")
 
-        st.write(f"Condition: {condition}")
-
-        if pred == "rain":
-            st.success("🌧️ Rain Detected (API)")
-        elif pred == "sun":
-            st.success("☀️ Clear Weather (API)")
-        else:
-            st.success("☁️ Cloudy Weather (API)")
+        st.success(f"Condition: {condition}")
 
 # =========================================================
-# 💻 OFFLINE MODE (HYBRID ML)
+# 💻 OFFLINE MODE
 # =========================================================
-if mode == "💻 Offline (Hybrid ML)":
+if mode == "💻 Offline (ML)":
 
-    st.subheader("💻 Offline Auto Prediction (Hybrid Model)")
+    st.subheader("💻 Offline Auto Prediction")
 
     if st.button("⚡ Generate Prediction"):
 
@@ -149,40 +136,38 @@ if mode == "💻 Offline (Hybrid ML)":
         weather = le.inverse_transform(pred)[0]
         confidence = np.max(prob)
 
-        # DISPLAY
-        st.markdown("### 🌍 Dataset Sample Used")
-
+        # Display dataset sample
+        st.markdown("### 🌍 Dataset Sample")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🌡 Temp", round(temp,1))
         c2.metric("💧 Rain", precipitation)
         c3.metric("🌪 Wind", wind)
         c4.metric("📅 Month", month)
 
-        st.markdown("## 🔮 Hybrid Prediction")
+        # Prediction
+        st.markdown("## 🔮 Prediction")
 
         if weather == "rain":
-            st.success("🌧️ Rain Expected (Hybrid)")
+            st.success("🌧️ Rain Expected")
         elif weather == "sun":
-            st.success("☀️ Clear Weather (Hybrid)")
+            st.success("☀️ Clear Weather")
         else:
-            st.success("☁️ Cloudy (Hybrid)")
+            st.success("☁️ Cloudy")
 
         st.write(f"Confidence: {round(confidence,2)}")
-
-        st.info("🔥 Hybrid model combines RF + SVM probabilities")
 
 # =========================================================
 # 📊 PERFORMANCE
 # =========================================================
 st.subheader("📊 Model Performance")
 
-st.write(f"Random Forest Accuracy: {rf_acc:.2f}")
+st.write(f"RF Accuracy: {rf_acc:.2f}")
 st.write(f"SVM Accuracy: {svm_acc:.2f}")
 st.write(f"Hybrid Accuracy: {hybrid_acc:.2f}")
 st.write(f"⏱ Training Time: {train_time:.2f}s")
 
 # ------------------ CONFUSION MATRIX ------------------
-st.subheader("📉 Confusion Matrix (Hybrid)")
+st.subheader("📉 Confusion Matrix")
 
 cm = confusion_matrix(y_test, hybrid_pred)
 st.dataframe(cm)
