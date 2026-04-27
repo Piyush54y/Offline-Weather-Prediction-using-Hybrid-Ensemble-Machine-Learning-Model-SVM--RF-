@@ -15,7 +15,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 # -----------------------
 st.set_page_config(page_title="Weather AI PRO MAX", layout="wide")
 
-API_KEY = "bcbb60c7dbd12fcf01754ed47775153e"  # 🔴 replace
+API_KEY = "efd7a881ace6419480e100155251006"  # 🔴 replace
 
 # -----------------------
 # UI STYLE (PREMIUM)
