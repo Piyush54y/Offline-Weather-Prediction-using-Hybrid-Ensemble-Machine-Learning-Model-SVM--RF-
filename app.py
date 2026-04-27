@@ -37,7 +37,7 @@ st.markdown('<div class="big-title">🌦️ Weather Prediction PRO</div>', unsaf
 # ------------------ LOAD DATA ------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("weather(8).csv")
+    df = pd.read_csv("weather.csv")
     return train_test_split(df, test_size=0.2, random_state=42)
 
 train_df, test_df = load_data()
