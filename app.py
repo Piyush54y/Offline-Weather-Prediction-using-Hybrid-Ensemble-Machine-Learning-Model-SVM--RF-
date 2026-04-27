@@ -9,20 +9,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import confusion_matrix, roc_curve, auc
+from sklearn.metrics import confusion_matrix
 
 st.set_page_config(layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
-
-# ------------------ UI ------------------
-st.markdown("""
-<style>
-.stApp {background: linear-gradient(135deg,#0f172a,#1e293b,#334155); color:white;}
-.card {background: rgba(255,255,255,0.08); padding:15px; border-radius:15px;
-       text-align:center; backdrop-filter: blur(10px);}
-</style>
-""", unsafe_allow_html=True)
 
 st.title("🌦️ Weather AI PRO MAX")
 
@@ -34,21 +25,27 @@ def load_data():
 
 train_df, test_df = load_data()
 
-# ------------------ FEATURES ------------------
+# ------------------ FEATURE ENGINEERING ------------------
 for df in [train_df, test_df]:
     df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
     df["temp_range"] = df["temp_max"] - df["temp_min"]
+    df["month"] = pd.to_datetime(df["date"]).dt.month
 
+# ------------------ ENCODING ------------------
 le = LabelEncoder()
 train_df["weather"] = le.fit_transform(train_df["weather"])
 test_df["weather"] = le.transform(test_df["weather"])
 
-X_train = train_df[["temp_avg","temp_range","wind"]]
+# ------------------ FEATURES ------------------
+features = ["temp_avg","temp_range","wind","precipitation","month"]
+
+X_train = train_df[features]
 y_train = train_df["weather"]
 
-X_test = test_df[["temp_avg","temp_range","wind"]]
+X_test = test_df[features]
 y_test = test_df["weather"]
 
+# ------------------ SCALING ------------------
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
@@ -58,8 +55,19 @@ X_test = scaler.transform(X_test)
 def train_models():
     start = time.time()
 
-    rf = RandomForestClassifier(n_estimators=300, max_depth=12)
-    svm = SVC(probability=True, C=10, gamma=0.1)
+    rf = RandomForestClassifier(
+        n_estimators=500,
+        max_depth=15,
+        min_samples_split=4,
+        random_state=42
+    )
+
+    svm = SVC(
+        kernel="rbf",
+        C=20,
+        gamma=0.05,
+        probability=True
+    )
 
     rf.fit(X_train, y_train)
     svm.fit(X_train, y_train)
@@ -70,7 +78,11 @@ rf, svm, train_time = train_models()
 
 # ------------------ ML PREDICT ------------------
 def ml_predict(temp, wind):
-    X_input = scaler.transform([[temp, 5, wind]])
+    temp_range = 5
+    precipitation = 0
+    month = 6
+
+    X_input = scaler.transform([[temp, temp_range, wind, precipitation, month]])
 
     rf_p = rf.predict_proba(X_input)
     svm_p = svm.predict_proba(X_input)
@@ -106,7 +118,13 @@ if mode == "💻 Offline (ML)":
 
     if st.button("Predict"):
         pred = ml_predict(temp, wind)
-        st.success(f"🤖 Prediction: {pred.upper()}")
+
+        if pred == "rain":
+            st.success("🌧️ Rain Expected")
+        elif pred == "sun":
+            st.success("☀️ Clear Weather")
+        else:
+            st.success("☁️ Cloudy")
 
 # ------------------ PERFORMANCE ------------------
 st.subheader("📊 Model Performance (Fixed)")
@@ -118,41 +136,8 @@ st.write(f"RF Accuracy: {rf_acc:.2f}")
 st.write(f"SVM Accuracy: {svm_acc:.2f}")
 st.write(f"⏱ Training Time: {train_time:.2f}s")
 
-st.info("Metrics are computed on fixed test dataset (reproducible)")
+# ------------------ CONFUSION MATRIX ------------------
+st.subheader("📉 Confusion Matrix")
 
-# ------------------ DYNAMIC CONFUSION MATRIX ------------------
-st.subheader("📉 Confusion Matrix (Dynamic Sample)")
-
-idx = np.random.choice(len(X_test), 25)
-sample_X = X_test[idx]
-sample_y = y_test.iloc[idx]
-
-preds = rf.predict(sample_X)
-
-cm = confusion_matrix(sample_y, preds)
-
-fig, ax = plt.subplots()
-ax.imshow(cm)
-
-for i in range(len(cm)):
-    for j in range(len(cm)):
-        ax.text(j, i, cm[i,j], ha="center", va="center")
-
-st.pyplot(fig)
-
-# ------------------ ROC ------------------
-st.subheader("📈 ROC Curve")
-
-rain_label = le.transform(["rain"])[0]
-y_bin = (y_test == rain_label).astype(int)
-
-probs = rf.predict_proba(X_test)[:, rain_label]
-
-fpr, tpr, _ = roc_curve(y_bin, probs)
-roc_auc = auc(fpr, tpr)
-
-fig2, ax2 = plt.subplots()
-ax2.plot(fpr, tpr)
-ax2.set_title(f"AUC = {roc_auc:.2f}")
-
-st.pyplot(fig2)
+cm = confusion_matrix(y_test, rf.predict(X_test))
+st.dataframe(cm)
