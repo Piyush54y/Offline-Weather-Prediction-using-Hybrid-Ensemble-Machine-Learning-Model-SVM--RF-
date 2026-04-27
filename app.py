@@ -30,16 +30,12 @@ st.title("🌦️ Weather AI PRO MAX")
 # ------------------ LOAD TRAIN/TEST ------------------
 @st.cache_data
 def load_data():
-    train = pd.read_csv("train.csv")
-    test = pd.read_csv("test.csv")
+    df = pd.read_csv("seattle-weather.csv")
+
+    from sklearn.model_selection import train_test_split
+    train, test = train_test_split(df, test_size=0.2, random_state=42)
+
     return train, test
-
-train_df, test_df = load_data()
-
-# Feature Engineering
-for df in [train_df, test_df]:
-    df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
-    df["temp_range"] = df["temp_max"] - df["temp_min"]
 
 # Encode
 le = LabelEncoder()
