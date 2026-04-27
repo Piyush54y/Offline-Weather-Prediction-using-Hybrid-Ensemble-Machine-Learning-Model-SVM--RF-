@@ -154,13 +154,18 @@ if mode == "🌐 Online (API)":
         st.info(f"AQI: {round(aqi)} | {status}")
         st.write(msg)
 
+# ------------------ MODEL ACCURACY ------------------
+rf_acc = rf.score(X_test, y_test)
+svm_acc = svm.score(X_test, y_test)
+
+best_model = "Random Forest" if rf_acc > svm_acc else "SVM"
+
 # ------------------ OFFLINE ------------------
-# ------------------ OFFLINE AUTO MODE ------------------
 st.subheader("💻 Offline Auto Prediction (Dataset Based)")
 
 if st.button("⚡ Generate Prediction"):
 
-    # Pick random row from dataset
+    # Random dataset row
     sample = test_df.sample(1)
 
     temp = float(sample["temp_avg"].values[0])
@@ -168,39 +173,61 @@ if st.button("⚡ Generate Prediction"):
     precipitation = float(sample["precipitation"].values[0])
     month = int(sample["month"].values[0])
 
-    # Prediction
+    # Prepare input
     X_input = scaler.transform([[temp, 5, wind, precipitation, month]])
 
+    # Individual predictions
+    rf_pred = rf.predict(X_input)
+    svm_pred = svm.predict(X_input)
+
+    rf_label = le.inverse_transform(rf_pred)[0]
+    svm_label = le.inverse_transform(svm_pred)[0]
+
+    # Hybrid prediction
     prob = (rf.predict_proba(X_input) + svm.predict_proba(X_input)) / 2
     pred = np.argmax(prob, axis=1)
-
-    weather = le.inverse_transform(pred)[0]
+    hybrid_label = le.inverse_transform(pred)[0]
     confidence = np.max(prob)
 
-    # ------------------ UI OUTPUT ------------------
-
-    st.markdown("### 🌍 Real Dataset Sample Used")
+    # ------------------ DATA DISPLAY ------------------
+    st.markdown("### 🌍 Dataset Sample")
 
     col1, col2, col3, col4 = st.columns(4)
-
     col1.metric("🌡 Temp", f"{round(temp,1)}°C")
     col2.metric("💧 Rain", f"{precipitation}")
     col3.metric("🌪 Wind", f"{wind}")
     col4.metric("📅 Month", f"{month}")
 
-    # Prediction Display
+    # ------------------ PREDICTIONS ------------------
     st.markdown("## 🔮 Prediction Result")
 
-    if weather == "rain":
+    if hybrid_label == "rain":
         st.success("🌧️ Rain Expected")
-    elif weather == "sun":
+    elif hybrid_label == "sun":
         st.success("☀️ Clear Weather")
     else:
         st.success("☁️ Cloudy")
 
     st.write(f"Confidence: {round(confidence,2)}")
 
-    # AQI (simulated)
+    # ------------------ MODEL COMPARISON ------------------
+    st.markdown("### 🤖 Model Comparison")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.markdown(f"**🌳 Random Forest**<br>Prediction: {rf_label}<br>Accuracy: {round(rf_acc,2)}", unsafe_allow_html=True)
+    c2.markdown(f"**🧠 SVM**<br>Prediction: {svm_label}<br>Accuracy: {round(svm_acc,2)}", unsafe_allow_html=True)
+    c3.markdown(f"**🔥 Hybrid**<br>Prediction: {hybrid_label}<br>Confidence: {round(confidence,2)}", unsafe_allow_html=True)
+
+    # ------------------ BEST MODEL ------------------
+    st.markdown("### 🏆 Best Model")
+
+    if best_model == "Random Forest":
+        st.success("🌳 Random Forest performs better overall")
+    else:
+        st.success("🧠 SVM performs better overall")
+
+    # ------------------ AQI ------------------
     aqi = np.random.randint(40,150)
 
     if aqi <= 50:
@@ -216,7 +243,6 @@ if st.button("⚡ Generate Prediction"):
     st.markdown("### 🌫 AQI (Estimated)")
     st.info(f"AQI: {aqi} | {status}")
     st.write(msg)
-
 # ------------------ PERFORMANCE ------------------
 st.subheader("📊 Model Performance")
 
