@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import requests
 import time
+import seaborn as sns
+import matplotlib.pyplot as plt
+import os
 
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -14,67 +17,44 @@ st.set_page_config(layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
-# ------------------ PREMIUM UI ------------------
+# ------------------ UI ------------------
 st.markdown("""
 <style>
 body {background: linear-gradient(135deg,#0f172a,#1e293b);}
-.big-title {font-size:40px;font-weight:700;color:#38bdf8;}
-.card {
-    background:#1e293b;
-    padding:20px;
-    border-radius:15px;
-    box-shadow:0 0 15px rgba(0,0,0,0.5);
-}
-.metric {
-    text-align:center;
-    font-size:20px;
-}
+.title {font-size:38px;font-weight:bold;color:#38bdf8;}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="big-title">🌦️ Weather Prediction PRO</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🌦️ Weather AI PRO MAX</div>', unsafe_allow_html=True)
 
 # ------------------ LOAD DATA ------------------
 @st.cache_data
 def load_data():
+    if not os.path.exists("weather.csv"):
+        st.error("❌ Upload weather.csv in project folder")
+        st.stop()
+
     df = pd.read_csv("weather.csv")
     return train_test_split(df, test_size=0.2, random_state=42)
 
 train_df, test_df = load_data()
 
-# ------------------ AUTO COLUMN DETECTION ------------------
-def detect_columns(df):
-    cols = df.columns.str.lower()
+# ------------------ COLUMN AUTO DETECT ------------------
+def detect(df):
+    cols = df.columns
 
-    temp = None
-    if "temp_max" in cols:
-        temp = "temp_max"
-    elif "temperature" in cols:
-        temp = "temperature"
-    elif "temp" in cols:
-        temp = "temp"
-
-    humidity = next((c for c in df.columns if "humidity" in c.lower()), None)
-    wind = next((c for c in df.columns if "wind" in c.lower()), None)
-    rain = next((c for c in df.columns if "precip" in c.lower()), None)
-    target = next((c for c in df.columns if "weather" in c.lower()), None)
+    temp = next((c for c in cols if "temp" in c.lower()), None)
+    humidity = next((c for c in cols if "humidity" in c.lower()), None)
+    wind = next((c for c in cols if "wind" in c.lower()), None)
+    rain = next((c for c in cols if "precip" in c.lower()), None)
+    target = next((c for c in cols if "weather" in c.lower()), None)
 
     return temp, humidity, wind, rain, target
 
-temp_col, hum_col, wind_col, rain_col, target_col = detect_columns(train_df)
-
-# ------------------ VALIDATION ------------------
-if None in [temp_col, wind_col, target_col]:
-    st.error("❌ Your CSV format not supported. Send columns.")
-    st.stop()
+temp_col, hum_col, wind_col, rain_col, target_col = detect(train_df)
 
 # ------------------ FEATURES ------------------
-features = [temp_col, wind_col]
-
-if hum_col:
-    features.append(hum_col)
-if rain_col:
-    features.append(rain_col)
+features = [c for c in [temp_col, hum_col, wind_col, rain_col] if c]
 
 X_train = train_df[features]
 y_train = train_df[target_col]
@@ -82,19 +62,19 @@ y_train = train_df[target_col]
 X_test = test_df[features]
 y_test = test_df[target_col]
 
-# ------------------ ENCODING ------------------
+# ------------------ ENCODE ------------------
 le = LabelEncoder()
 y_train = le.fit_transform(y_train)
 y_test = le.transform(y_test)
 
-# ------------------ SCALING ------------------
+# ------------------ SCALE ------------------
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
 # ------------------ TRAIN ------------------
 @st.cache_resource
-def train_models():
+def train():
     start = time.time()
 
     rf = RandomForestClassifier(n_estimators=200)
@@ -105,90 +85,103 @@ def train_models():
 
     return rf, svm, time.time() - start
 
-rf, svm, train_time = train_models()
+rf, svm, t_time = train()
 
 # ------------------ HYBRID ------------------
-def hybrid_predict(X):
-    rf_prob = rf.predict_proba(X)
-    svm_prob = svm.predict_proba(X)
-    prob = (rf_prob + svm_prob) / 2
+def hybrid(X):
+    rf_p = rf.predict_proba(X)
+    svm_p = svm.predict_proba(X)
+    prob = (rf_p + svm_p) / 2
     pred = np.argmax(prob, axis=1)
     return pred, prob
 
 # ------------------ ACCURACY ------------------
 rf_acc = rf.score(X_test, y_test)
 svm_acc = svm.score(X_test, y_test)
-hybrid_pred, _ = hybrid_predict(X_test)
-hybrid_acc = accuracy_score(y_test, hybrid_pred)
+hy_pred, _ = hybrid(X_test)
+hy_acc = accuracy_score(y_test, hy_pred)
 
-# ------------------ API ------------------
-def get_weather_api(city):
-    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
+# ------------------ API + AQI ------------------
+def api(city):
+    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}&aqi=yes"
     data = requests.get(url).json()
 
     temp = data["current"]["temp_c"]
     humidity = data["current"]["humidity"]
-    condition = data["current"]["condition"]["text"]
+    cond = data["current"]["condition"]["text"]
+    aqi = data["current"]["air_quality"]["pm2_5"]
 
-    return temp, humidity, condition
+    return temp, humidity, cond, aqi
 
 # ------------------ MODE ------------------
 mode = st.radio("Mode", ["🌐 Online", "💻 Offline"])
 
 # =========================================================
-# 🌐 ONLINE MODE
+# 🌐 ONLINE
 # =========================================================
 if mode == "🌐 Online":
+
     city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
 
-    if st.button("🌍 Get Live Weather"):
-        temp, humidity, condition = get_weather_api(city)
+    if st.button("🌍 Get Weather"):
 
-        st.markdown("### 🌐 Live Weather")
+        temp, hum, cond, aqi = api(city)
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         c1.metric("🌡 Temp", f"{temp}°C")
-        c2.metric("💧 Humidity", f"{humidity}%")
+        c2.metric("💧 Humidity", f"{hum}%")
+        c3.metric("🌫 AQI", round(aqi,1))
 
-        st.success(f"☁️ {condition}")
+        if aqi < 50:
+            st.success("🟢 Good Air")
+        elif aqi < 100:
+            st.warning("🟡 Moderate")
+        else:
+            st.error("🔴 Unhealthy")
+
+        st.success(f"☁️ {cond}")
 
 # =========================================================
-# 💻 OFFLINE MODE
+# 💻 OFFLINE
 # =========================================================
 if mode == "💻 Offline":
 
-    if st.button("⚡ Predict (Auto Dataset)"):
-        sample = test_df.sample(1)
+    if st.button("⚡ Predict"):
 
+        sample = test_df.sample(1)
         X_input = scaler.transform(sample[features])
 
-        pred, prob = hybrid_predict(X_input)
+        pred, prob = hybrid(X_input)
         weather = le.inverse_transform(pred)[0]
-        confidence = np.max(prob)
 
-        st.markdown("### 🔮 Prediction")
+        st.markdown("## 🔮 Prediction")
 
         if "rain" in weather.lower():
-            st.success("🌧️ Rain Expected")
+            st.success("🌧️ Rain")
         elif "sun" in weather.lower():
-            st.success("☀️ Clear Weather")
+            st.success("☀️ Clear")
         else:
             st.success("☁️ Cloudy")
 
-        st.write(f"Confidence: {round(confidence,2)}")
-
-# ------------------ PERFORMANCE ------------------
-st.markdown("### 📊 Model Performance")
+# =========================================================
+# 📊 PERFORMANCE
+# =========================================================
+st.markdown("## 📊 Model Performance")
 
 c1, c2, c3 = st.columns(3)
-c1.metric("🌳 RF", f"{rf_acc:.2f}")
-c2.metric("🧠 SVM", f"{svm_acc:.2f}")
-c3.metric("🔥 Hybrid", f"{hybrid_acc:.2f}")
+c1.metric("RF", f"{rf_acc:.2f}")
+c2.metric("SVM", f"{svm_acc:.2f}")
+c3.metric("Hybrid", f"{hy_acc:.2f}")
 
-st.write(f"⏱ Training Time: {train_time:.2f}s")
+st.write(f"⏱ Time: {t_time:.2f}s")
 
-# ------------------ CONFUSION MATRIX ------------------
-st.markdown("### 📉 Confusion Matrix")
+# =========================================================
+# 📉 HEATMAP
+# =========================================================
+st.markdown("## 📉 Confusion Matrix Heatmap")
 
-cm = confusion_matrix(y_test, hybrid_pred)
-st.dataframe(cm)
+cm = confusion_matrix(y_test, hy_pred)
+
+fig, ax = plt.subplots()
+sns.heatmap(cm, annot=True, fmt='d', cmap='coolwarm', ax=ax)
+st.pyplot(fig)
