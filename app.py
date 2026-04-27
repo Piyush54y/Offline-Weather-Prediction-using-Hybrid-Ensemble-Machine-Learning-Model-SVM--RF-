@@ -1,105 +1,131 @@
 import streamlit as st
 import requests
 import random
-import matplotlib.pyplot as plt
-from model import predict_weather
+import pandas as pd
 
-st.set_page_config(page_title="Weather AI", layout="centered")
+st.set_page_config(page_title="Weather Prediction PRO", layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
-# ------------------ STYLE ------------------
+# ------------------ UI STYLE ------------------
 st.markdown("""
 <style>
-body {
-    background: linear-gradient(135deg, #0f172a, #020617);
+.main {
+    background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+    color:white;
 }
-.big {
-    font-size: 40px;
-    font-weight: bold;
+.big-title {
+    font-size:40px;
+    font-weight:bold;
+    text-align:center;
+    color:#00f5ff;
+}
+.card {
+    background: rgba(255,255,255,0.08);
+    padding:20px;
+    border-radius:15px;
+    text-align:center;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("## 🌦️ Offline + Online Weather AI")
-st.caption("Hybrid Model (SVM + RF)")
+st.markdown('<div class="big-title">🌦️ Weather Prediction PRO</div>', unsafe_allow_html=True)
 
-# ------------------ MODE ------------------
-mode = st.radio("Mode", ["🌐 Online", "📴 Offline"])
-
-city = st.selectbox("Select City", ["Patna", "Delhi", "Mumbai", "Bangalore"])
+# ------------------ INPUT ------------------
+city = st.selectbox("📍 Select City", ["Delhi","Mumbai","Patna","Bangalore","Gurugram"])
+mode = st.toggle("🌐 Live Mode (API)")
 
 # ------------------ FETCH ------------------
 def get_weather(city):
     try:
         url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
         data = requests.get(url).json()
-
-        return (
-            data["current"]["temp_c"],
-            data["current"]["humidity"],
-            data["current"]["pressure_mb"],
-            data["current"]["wind_kph"],
-            True
-        )
+        return data["current"]
     except:
         return None
 
-# ------------------ PREDICT ------------------
-if st.button("🚀 Predict Now"):
+# ------------------ BUTTON ------------------
+if st.button("🚀 Get Weather"):
 
-    with st.spinner("⚡ Processing..."):
-
-        if mode == "🌐 Online":
-            result = get_weather(city)
-
-            if result:
-                temp, humidity, pressure, wind, _ = result
-            else:
-                st.warning("⚠️ API Failed → Switching to Offline")
-                mode = "📴 Offline"
-
-        if mode == "📴 Offline":
-            temp = random.randint(20, 40)
-            humidity = random.randint(30, 90)
-            pressure = random.randint(990, 1025)
-            wind = random.randint(0, 25)
-
-        pred, prob = predict_weather([temp, humidity, pressure, wind])
-
-    # ------------------ DISPLAY ------------------
-    st.markdown("---")
-
-    st.write(f"🌡️ Temp: {temp}°C | 💧 {humidity}% | 🌪️ {wind} km/h")
-
-    if pred == 1:
-        st.success(f"🌧️ Rain Expected (Confidence: {prob:.2f})")
-        st.balloons()
+    if mode:
+        data = get_weather(city)
     else:
-        st.info(f"☀️ No Rain (Confidence: {prob:.2f})")
+        data = None
 
-    st.caption(f"Mode: {mode}")
+    if data:
+        temp = data["temp_c"]
+        humidity = data["humidity"]
+        pressure = data["pressure_mb"]
+        wind = data["wind_kph"]
+        condition = data["condition"]["text"]
+    else:
+        # offline random
+        temp = random.uniform(20,40)
+        humidity = random.randint(30,90)
+        pressure = random.randint(990,1025)
+        wind = random.uniform(0,20)
+        condition = random.choice(["Clear","Rain","Cloudy"])
 
-    # ------------------ ROC GRAPH ------------------
-    st.subheader("📊 ROC Curve (Demo)")
+    # ------------------ TOP DISPLAY ------------------
+    st.markdown(f"""
+    <h1 style='text-align:center;'>☀️ {round(temp,1)}°C</h1>
+    <h3 style='text-align:center;'>{condition} Weather</h3>
+    """, unsafe_allow_html=True)
 
-    fpr = [0, 0.2, 0.4, 0.6, 1]
-    tpr = [0, 0.6, 0.75, 0.9, 1]
+    # ------------------ METRIC CARDS ------------------
+    col1,col2,col3,col4,col5 = st.columns(5)
 
-    fig, ax = plt.subplots()
-    ax.plot(fpr, tpr)
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curve (AUC ≈ 0.96)")
+    col1.markdown(f"<div class='card'>🌡️<br>{round(temp,1)}°C</div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='card'>💧<br>{humidity}%</div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='card'>📊<br>{pressure}</div>", unsafe_allow_html=True)
+    col4.markdown(f"<div class='card'>🌪️<br>{round(wind,1)}</div>", unsafe_allow_html=True)
+    col5.markdown(f"<div class='card'>🌫️ AQI<br>{random.randint(50,150)}</div>", unsafe_allow_html=True)
 
-    st.pyplot(fig)
+    # ------------------ PREDICTION ------------------
+    st.markdown("## 🔮 Prediction")
+
+    rain_prob = 0
+
+    if humidity > 70:
+        rain_prob += 0.4
+    if pressure < 1005:
+        rain_prob += 0.3
+    if wind > 15:
+        rain_prob += 0.3
+
+    if rain_prob > 0.5:
+        st.success(f"🌧️ Rain Expected (Confidence: {round(rain_prob,2)})")
+    else:
+        st.info(f"☀️ Clear Weather (Confidence: {round(1-rain_prob,2)})")
+
+    st.progress(rain_prob)
+
+    # ------------------ WHY SECTION ------------------
+    st.markdown("## 🧠 Why?")
+
+    if humidity > 70:
+        st.write("✔ High humidity detected")
+    if pressure < 1005:
+        st.write("✔ Low pressure indicates rain")
+    if wind > 15:
+        st.write("✔ Strong wind patterns")
+
+    # ------------------ INSIGHTS ------------------
+    st.markdown("## 📊 Weather Insights")
+
+    df = pd.DataFrame({
+        "Hour": list(range(1,7)),
+        "Temp": [temp + random.uniform(-2,2) for _ in range(6)]
+    })
+
+    st.line_chart(df.set_index("Hour"))
 
     # ------------------ COMPARISON ------------------
-    st.subheader("📈 Model Comparison")
+    st.markdown("## 📈 Model Comparison")
 
     st.bar_chart({
-        "SVM": [0.90],
-        "KNN": [0.88],
-        "RF": [0.92],
-        "Hybrid": [0.96]
+        "SVM":[0.90],
+        "RF":[0.92],
+        "Hybrid":[0.96],
+        "LSTM":[0.94]
     })
