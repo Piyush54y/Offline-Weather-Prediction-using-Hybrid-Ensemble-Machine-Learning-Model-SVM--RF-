@@ -1,202 +1,114 @@
 import streamlit as st
-import requests
-import random
 import pandas as pd
+import numpy as np
+import requests
 
-st.set_page_config(page_title="Weather AI PRO", layout="wide")
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import confusion_matrix, roc_curve, auc
 
-API_KEY = "efd7a881ace6419480e100155251006"
+st.set_page_config(page_title="Weather ML PRO", layout="wide")
 
-# ------------------ BACKGROUND + ANIMATION ------------------
-st.markdown("""
-<style>
-.stApp {
-    background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-    color:white;
-}
+# ------------------ LOAD DATA ------------------
+df = pd.read_csv("seattle-weather.csv")
 
-/* Rain animation */
-.rain {
-    position: fixed;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    top: 0;
-    left: 0;
-    background-image: url('https://i.ibb.co/7S3m8zZ/rain.gif');
-    opacity: 0.15;
-}
+# Encode labels
+le = LabelEncoder()
+df["weather"] = le.fit_transform(df["weather"])
 
-/* Sun glow */
-.sun {
-    position: fixed;
-    top: 50px;
-    right: 50px;
-    font-size: 60px;
-    animation: glow 2s infinite alternate;
-}
+# Features (adjust if needed)
+X = df[["temp_max", "temp_min", "wind"]]
+y = df["weather"]
 
-@keyframes glow {
-    from {opacity: 0.6;}
-    to {opacity: 1;}
-}
+# Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
-.card {
-    background: rgba(255,255,255,0.08);
-    padding:20px;
-    border-radius:15px;
-    text-align:center;
-}
-</style>
-""", unsafe_allow_html=True)
+# ------------------ TRAIN MODELS ------------------
+rf = RandomForestClassifier()
+svm = SVC(probability=True)
 
-st.title("🌦️ Weather AI PRO")
+rf.fit(X_train, y_train)
+svm.fit(X_train, y_train)
 
-# ------------------ AUTO LOCATION ------------------
-def get_location():
-    try:
-        res = requests.get("https://ipinfo.io/json").json()
-        return res["city"]
-    except:
-        return "Delhi"
+# ------------------ HYBRID MODEL ------------------
+def hybrid_predict(X_input):
+    rf_prob = rf.predict_proba(X_input)
+    svm_prob = svm.predict_proba(X_input)
 
-auto_city = get_location()
+    hybrid_prob = (rf_prob + svm_prob) / 2
+    return np.argmax(hybrid_prob, axis=1), hybrid_prob
 
-city = st.selectbox("📍 Select City", ["Auto Detect", "Delhi","Mumbai","Patna","Bangalore","Gurugram"])
+# ------------------ UI ------------------
+st.title("🌦️ Hybrid Weather Prediction System")
 
-if city == "Auto Detect":
-    city = auto_city
+temp = st.slider("Temperature (°C)", 0, 40, 25)
+wind = st.slider("Wind Speed", 0, 30, 5)
 
-mode = st.toggle("🌐 Live Mode")
+# simple mapping
+temp_min = temp - 5
 
-# ------------------ FETCH WEATHER ------------------
-def get_weather(city):
-    try:
-        url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
-        data = requests.get(url).json()
-        return data["current"]
-    except:
-        return None
+# ------------------ PREDICT ------------------
+if st.button("Predict"):
 
-# ------------------ BUTTON ------------------
-if st.button("🚀 Get Weather"):
+    X_input = np.array([[temp, temp_min, wind]])
 
-    data = get_weather(city) if mode else None
+    pred, prob = hybrid_predict(X_input)
+    label = le.inverse_transform(pred)[0]
 
-    if data:
-        temp = data["temp_c"]
-        humidity = data["humidity"]
-        pressure = data["pressure_mb"]
-        wind = data["wind_kph"]
-        condition = data["condition"]["text"]
+    st.subheader("🔮 Prediction Result")
+
+    if label == "rain":
+        st.success(f"🌧️ Rain Expected (Confidence: {round(np.max(prob),2)})")
+    elif label == "sun":
+        st.info(f"☀️ Sunny Weather (Confidence: {round(np.max(prob),2)})")
     else:
-        temp = random.uniform(20,40)
-        humidity = random.randint(30,90)
-        pressure = random.randint(990,1025)
-        wind = random.uniform(0,20)
-        condition = random.choice(["Clear","Rain","Cloudy"])
+        st.warning(f"🌤️ {label} (Confidence: {round(np.max(prob),2)})")
 
-    # ------------------ WEATHER EFFECT ------------------
-    if "Rain" in condition:
-        st.markdown('<div class="rain"></div>', unsafe_allow_html=True)
-        icon = "🌧️"
-    elif "Clear" in condition:
-        st.markdown('<div class="sun">☀️</div>', unsafe_allow_html=True)
-        icon = "☀️"
-    else:
-        icon = "☁️"
+# ------------------ ACCURACY ------------------
+st.markdown("## 📊 Model Performance")
 
-    # ------------------ HERO ------------------
-    st.markdown(f"""
-    <h1 style='text-align:center;font-size:60px;'>{icon} {round(temp,1)}°C</h1>
-    <h3 style='text-align:center;'>{condition}</h3>
-    """, unsafe_allow_html=True)
+rf_acc = rf.score(X_test, y_test)
+svm_acc = svm.score(X_test, y_test)
 
-    # ------------------ CARDS ------------------
-    col1,col2,col3,col4,col5 = st.columns(5)
+st.write(f"Random Forest Accuracy: {round(rf_acc*100,2)}%")
+st.write(f"SVM Accuracy: {round(svm_acc*100,2)}%")
 
-    col1.markdown(f"<div class='card'>🌡️ Temp<br><b>{round(temp,1)}°C</b></div>", unsafe_allow_html=True)
-    col2.markdown(f"<div class='card'>💧 Humidity<br><b>{humidity}%</b></div>", unsafe_allow_html=True)
-    col3.markdown(f"<div class='card'>📊 Pressure<br><b>{pressure}</b></div>", unsafe_allow_html=True)
-    col4.markdown(f"<div class='card'>🌪️ Wind<br><b>{round(wind,1)}</b></div>", unsafe_allow_html=True)
+# ------------------ CONFUSION MATRIX ------------------
+st.markdown("## 📉 Confusion Matrix")
 
-    # AQI
-    aqi = random.randint(50,200)
-    if aqi <= 50:
-        status = "🟢 Good"
-        desc = "Safe air quality"
-    elif aqi <= 100:
-        status = "🟡 Moderate"
-        desc = "Acceptable air"
-    elif aqi <= 150:
-        status = "🟠 Unhealthy"
-        desc = "May cause discomfort"
-    else:
-        status = "🔴 Hazardous"
-        desc = "Avoid outdoor activity"
+y_pred = rf.predict(X_test)
+cm = confusion_matrix(y_test, y_pred)
 
-    col5.markdown(f"""
-    <div class='card'>
-    🌫️ AQI<br>
-    <b>{aqi}</b><br>
-    {status}<br>
-    <small>{desc}</small>
-    </div>
-    """, unsafe_allow_html=True)
+cm_df = pd.DataFrame(cm)
+st.dataframe(cm_df)
 
-    # ------------------ PREDICTION ------------------
-    st.markdown("## 🔮 Prediction")
+# ------------------ ROC CURVE ------------------
+st.markdown("## 📈 ROC Curve")
 
-    rain_prob = 0
-    if humidity > 70:
-        rain_prob += 0.4
-    if pressure < 1005:
-        rain_prob += 0.3
-    if wind > 15:
-        rain_prob += 0.3
+# binary simplification (rain vs not rain)
+y_test_bin = (y_test == le.transform(["rain"])[0]).astype(int)
+rf_probs = rf.predict_proba(X_test)[:, 1]
 
-    if rain_prob > 0.5:
-        msg = f"🌧️ Rain Expected ({round(rain_prob,2)})"
-        st.success(msg)
-    else:
-        msg = f"☀️ Clear Weather ({round(1-rain_prob,2)})"
-        st.info(msg)
+fpr, tpr, _ = roc_curve(y_test_bin, rf_probs)
+roc_auc = auc(fpr, tpr)
 
-    st.progress(rain_prob)
+roc_df = pd.DataFrame({
+    "FPR": fpr,
+    "TPR": tpr
+})
 
-    # ------------------ VOICE OUTPUT ------------------
-    st.markdown("## 🔊 Voice Output")
+st.line_chart(roc_df)
 
-    text = f"The weather in {city} is {condition}. Temperature is {round(temp,1)} degrees."
+st.write(f"AUC Score: {round(roc_auc,2)}")
 
-    st.audio(f"https://api.streamelements.com/kappa/v2/speech?voice=Brian&text={text}")
+# ------------------ MODEL COMPARISON ------------------
+st.markdown("## 📊 Model Comparison")
 
-    # ------------------ WHY ------------------
-    st.markdown("## 🧠 Why?")
+comp_df = pd.DataFrame({
+    "Model": ["SVM", "Random Forest", "Hybrid"],
+    "Accuracy": [svm_acc, rf_acc, (svm_acc+rf_acc)/2]
+})
 
-    if humidity > 70:
-        st.write("✔ High humidity")
-    if pressure < 1005:
-        st.write("✔ Low pressure")
-    if wind > 15:
-        st.write("✔ Strong wind")
-
-    # ------------------ INSIGHTS ------------------
-    st.markdown("## 📊 Insights")
-
-    df = pd.DataFrame({
-        "Time": list(range(1,13)),
-        "Temp": [temp + random.uniform(-3,3) for _ in range(12)]
-    })
-
-    st.line_chart(df.set_index("Time"))
-
-    # ------------------ COMPARISON ------------------
-    st.markdown("## 📈 Model Comparison")
-
-    st.bar_chart({
-        "SVM":[0.90],
-        "RF":[0.92],
-        "Hybrid":[0.96],
-        "LSTM":[0.94]
-    })
+st.bar_chart(comp_df.set_index("Model"))
