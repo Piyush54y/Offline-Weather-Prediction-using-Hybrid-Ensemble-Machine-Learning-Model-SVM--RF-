@@ -14,36 +14,78 @@ st.set_page_config(layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
-st.title("🌦️ Weather Prediction System")
+# ------------------ PREMIUM UI ------------------
+st.markdown("""
+<style>
+body {background: linear-gradient(135deg,#0f172a,#1e293b);}
+.big-title {font-size:40px;font-weight:700;color:#38bdf8;}
+.card {
+    background:#1e293b;
+    padding:20px;
+    border-radius:15px;
+    box-shadow:0 0 15px rgba(0,0,0,0.5);
+}
+.metric {
+    text-align:center;
+    font-size:20px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ------------------ LOAD YOUR CSV ------------------
+st.markdown('<div class="big-title">🌦️ Weather Prediction PRO</div>', unsafe_allow_html=True)
+
+# ------------------ LOAD DATA ------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("weather.csv")   # 🔥 YOUR FILE
+    df = pd.read_csv("weather(8).csv")
     return train_test_split(df, test_size=0.2, random_state=42)
 
 train_df, test_df = load_data()
 
-# ------------------ FEATURE ENGINEERING ------------------
-# (adjust if your CSV columns differ)
+# ------------------ AUTO COLUMN DETECTION ------------------
+def detect_columns(df):
+    cols = df.columns.str.lower()
 
-for df in [train_df, test_df]:
-    df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
-    df["temp_range"] = df["temp_max"] - df["temp_min"]
-    df["month"] = pd.to_datetime(df["date"]).dt.month
+    temp = None
+    if "temp_max" in cols:
+        temp = "temp_max"
+    elif "temperature" in cols:
+        temp = "temperature"
+    elif "temp" in cols:
+        temp = "temp"
+
+    humidity = next((c for c in df.columns if "humidity" in c.lower()), None)
+    wind = next((c for c in df.columns if "wind" in c.lower()), None)
+    rain = next((c for c in df.columns if "precip" in c.lower()), None)
+    target = next((c for c in df.columns if "weather" in c.lower()), None)
+
+    return temp, humidity, wind, rain, target
+
+temp_col, hum_col, wind_col, rain_col, target_col = detect_columns(train_df)
+
+# ------------------ VALIDATION ------------------
+if None in [temp_col, wind_col, target_col]:
+    st.error("❌ Your CSV format not supported. Send columns.")
+    st.stop()
+
+# ------------------ FEATURES ------------------
+features = [temp_col, wind_col]
+
+if hum_col:
+    features.append(hum_col)
+if rain_col:
+    features.append(rain_col)
+
+X_train = train_df[features]
+y_train = train_df[target_col]
+
+X_test = test_df[features]
+y_test = test_df[target_col]
 
 # ------------------ ENCODING ------------------
 le = LabelEncoder()
-train_df["weather"] = le.fit_transform(train_df["weather"])
-test_df["weather"] = le.transform(test_df["weather"])
-
-features = ["temp_avg","temp_range","wind","precipitation","month"]
-
-X_train = train_df[features]
-y_train = train_df["weather"]
-
-X_test = test_df[features]
-y_test = test_df["weather"]
+y_train = le.fit_transform(y_train)
+y_test = le.transform(y_test)
 
 # ------------------ SCALING ------------------
 scaler = StandardScaler()
@@ -55,8 +97,8 @@ X_test = scaler.transform(X_test)
 def train_models():
     start = time.time()
 
-    rf = RandomForestClassifier(n_estimators=300, max_depth=12)
-    svm = SVC(probability=True, C=10, gamma=0.1)
+    rf = RandomForestClassifier(n_estimators=200)
+    svm = SVC(probability=True)
 
     rf.fit(X_train, y_train)
     svm.fit(X_train, y_train)
@@ -69,16 +111,13 @@ rf, svm, train_time = train_models()
 def hybrid_predict(X):
     rf_prob = rf.predict_proba(X)
     svm_prob = svm.predict_proba(X)
-
     prob = (rf_prob + svm_prob) / 2
     pred = np.argmax(prob, axis=1)
-
     return pred, prob
 
 # ------------------ ACCURACY ------------------
 rf_acc = rf.score(X_test, y_test)
 svm_acc = svm.score(X_test, y_test)
-
 hybrid_pred, _ = hybrid_predict(X_test)
 hybrid_acc = accuracy_score(y_test, hybrid_pred)
 
@@ -94,80 +133,62 @@ def get_weather_api(city):
     return temp, humidity, condition
 
 # ------------------ MODE ------------------
-mode = st.radio("Select Mode", ["🌐 Online (API)", "💻 Offline (ML)"])
-city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
+mode = st.radio("Mode", ["🌐 Online", "💻 Offline"])
 
 # =========================================================
 # 🌐 ONLINE MODE
 # =========================================================
-if mode == "🌐 Online (API)":
+if mode == "🌐 Online":
+    city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
 
     if st.button("🌍 Get Live Weather"):
-
         temp, humidity, condition = get_weather_api(city)
 
-        st.subheader("🌐 Real-Time Weather")
+        st.markdown("### 🌐 Live Weather")
 
         c1, c2 = st.columns(2)
         c1.metric("🌡 Temp", f"{temp}°C")
         c2.metric("💧 Humidity", f"{humidity}%")
 
-        st.success(f"Condition: {condition}")
+        st.success(f"☁️ {condition}")
 
 # =========================================================
 # 💻 OFFLINE MODE
 # =========================================================
-if mode == "💻 Offline (ML)":
+if mode == "💻 Offline":
 
-    st.subheader("💻 Offline Auto Prediction")
-
-    if st.button("⚡ Generate Prediction"):
-
+    if st.button("⚡ Predict (Auto Dataset)"):
         sample = test_df.sample(1)
 
-        temp = float(sample["temp_avg"].values[0])
-        wind = float(sample["wind"].values[0])
-        precipitation = float(sample["precipitation"].values[0])
-        month = int(sample["month"].values[0])
-
-        X_input = scaler.transform([[temp, 5, wind, precipitation, month]])
+        X_input = scaler.transform(sample[features])
 
         pred, prob = hybrid_predict(X_input)
         weather = le.inverse_transform(pred)[0]
         confidence = np.max(prob)
 
-        # Display dataset sample
-        st.markdown("### 🌍 Dataset Sample")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡 Temp", round(temp,1))
-        c2.metric("💧 Rain", precipitation)
-        c3.metric("🌪 Wind", wind)
-        c4.metric("📅 Month", month)
+        st.markdown("### 🔮 Prediction")
 
-        # Prediction
-        st.markdown("## 🔮 Prediction")
-
-        if weather == "rain":
+        if "rain" in weather.lower():
             st.success("🌧️ Rain Expected")
-        elif weather == "sun":
+        elif "sun" in weather.lower():
             st.success("☀️ Clear Weather")
         else:
             st.success("☁️ Cloudy")
 
         st.write(f"Confidence: {round(confidence,2)}")
 
-# =========================================================
-# 📊 PERFORMANCE
-# =========================================================
-st.subheader("📊 Model Performance")
+# ------------------ PERFORMANCE ------------------
+st.markdown("### 📊 Model Performance")
 
-st.write(f"RF Accuracy: {rf_acc:.2f}")
-st.write(f"SVM Accuracy: {svm_acc:.2f}")
-st.write(f"Hybrid Accuracy: {hybrid_acc:.2f}")
+c1, c2, c3 = st.columns(3)
+c1.metric("🌳 RF", f"{rf_acc:.2f}")
+c2.metric("🧠 SVM", f"{svm_acc:.2f}")
+c3.metric("🔥 Hybrid", f"{hybrid_acc:.2f}")
+
 st.write(f"⏱ Training Time: {train_time:.2f}s")
 
 # ------------------ CONFUSION MATRIX ------------------
-st.subheader("📉 Confusion Matrix")
+st.markdown("### 📉 Confusion Matrix")
 
 cm = confusion_matrix(y_test, hybrid_pred)
 st.dataframe(cm)
