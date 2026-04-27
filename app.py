@@ -155,39 +155,67 @@ if mode == "🌐 Online (API)":
         st.write(msg)
 
 # ------------------ OFFLINE ------------------
-if mode == "💻 Offline (ML)":
-    temp = st.slider("🌡 Temperature", 0, 50, 25)
-    wind = st.slider("🌪 Wind", 0, 50, 10)
+# ------------------ OFFLINE AUTO MODE ------------------
+st.subheader("💻 Offline Auto Prediction (Dataset Based)")
 
-    if st.button("🤖 Predict (ML)"):
+if st.button("⚡ Generate Prediction"):
 
-        pred, conf = ml_predict(temp, wind)
+    # Pick random row from dataset
+    sample = test_df.sample(1)
 
-        if pred == "rain":
-            st.success("🌧️ Rain Expected")
-        elif pred == "sun":
-            st.success("☀️ Clear Weather")
-        else:
-            st.success("☁️ Cloudy")
+    temp = float(sample["temp_avg"].values[0])
+    wind = float(sample["wind"].values[0])
+    precipitation = float(sample["precipitation"].values[0])
+    month = int(sample["month"].values[0])
 
-        st.write(f"Confidence: {round(conf,2)}")
+    # Prediction
+    X_input = scaler.transform([[temp, 5, wind, precipitation, month]])
 
-        # Simulated AQI
-        aqi = np.random.randint(40,150)
+    prob = (rf.predict_proba(X_input) + svm.predict_proba(X_input)) / 2
+    pred = np.argmax(prob, axis=1)
 
-        if aqi <= 50:
-            status = "🟢 Good"
-            msg = "Air quality is safe"
-        elif aqi <= 100:
-            status = "🟡 Moderate"
-            msg = "Sensitive people be careful"
-        else:
-            status = "🔴 Unhealthy"
-            msg = "Avoid outdoor exposure"
+    weather = le.inverse_transform(pred)[0]
+    confidence = np.max(prob)
 
-        st.markdown("### 🌫 AQI (Estimated)")
-        st.info(f"AQI: {aqi} | {status}")
-        st.write(msg)
+    # ------------------ UI OUTPUT ------------------
+
+    st.markdown("### 🌍 Real Dataset Sample Used")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("🌡 Temp", f"{round(temp,1)}°C")
+    col2.metric("💧 Rain", f"{precipitation}")
+    col3.metric("🌪 Wind", f"{wind}")
+    col4.metric("📅 Month", f"{month}")
+
+    # Prediction Display
+    st.markdown("## 🔮 Prediction Result")
+
+    if weather == "rain":
+        st.success("🌧️ Rain Expected")
+    elif weather == "sun":
+        st.success("☀️ Clear Weather")
+    else:
+        st.success("☁️ Cloudy")
+
+    st.write(f"Confidence: {round(confidence,2)}")
+
+    # AQI (simulated)
+    aqi = np.random.randint(40,150)
+
+    if aqi <= 50:
+        status = "🟢 Good"
+        msg = "Air quality is clean"
+    elif aqi <= 100:
+        status = "🟡 Moderate"
+        msg = "Acceptable air"
+    else:
+        status = "🔴 Unhealthy"
+        msg = "Avoid outdoor activity"
+
+    st.markdown("### 🌫 AQI (Estimated)")
+    st.info(f"AQI: {aqi} | {status}")
+    st.write(msg)
 
 # ------------------ PERFORMANCE ------------------
 st.subheader("📊 Model Performance")
