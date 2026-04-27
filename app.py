@@ -4,7 +4,7 @@ from model import predict_weather
 
 app = Flask(__name__)
 
-API_KEY = "REPLACE_WITH_YOUR_API_KEY"
+API_KEY = "efd7a881ace6419480e100155251006"
 
 def get_weather(city):
     try:
