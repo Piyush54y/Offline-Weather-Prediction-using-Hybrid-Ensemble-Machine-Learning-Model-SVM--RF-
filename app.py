@@ -1,35 +1,14 @@
-import streamlit as st
+from flask import Flask, render_template, request, jsonify
 import requests
 from model import predict_weather
 
-st.set_page_config(page_title="Weather AI", layout="centered")
+app = Flask(__name__)
 
-st.markdown("""
-<style>
-.big-title {
-    font-size: 40px;
-    font-weight: bold;
-}
-.result-box {
-    padding: 20px;
-    border-radius: 10px;
-    font-size: 18px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("## 🌦️ Offline + Online Weather AI System")
-st.caption("Hybrid Model (SVM + Random Forest)")
-
-# ===============================
-# API CONFIG
-# ===============================
 API_KEY = "efd7a881ace6419480e100155251006"
-CITY = "Patna"
 
-def get_weather():
+def get_weather(city):
     try:
-        url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={CITY}"
+        url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
         data = requests.get(url).json()
 
         temp = data["current"]["temp_c"]
@@ -39,51 +18,29 @@ def get_weather():
 
         return temp, humidity, pressure, wind, True
     except:
-        return 25, 60, 1013, 10, False  # fallback
+        return 25, 60, 1013, 10, False
 
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-# ===============================
-# AUTO FETCH
-# ===============================
-with st.spinner("🔄 Fetching live weather..."):
-    temp, humidity, pressure, wind, online = get_weather()
+@app.route("/predict", methods=["POST"])
+def predict():
+    city = request.json.get("city")
 
-st.success("✅ Data Loaded")
+    temp, humidity, pressure, wind, online = get_weather(city)
 
-# Show current values
-st.markdown(f"""
-📍 **City:** {CITY}  
-🌡️ Temperature: **{temp}°C**  
-💧 Humidity: **{humidity}%**  
-🌪️ Wind: **{wind} km/h**  
-""")
+    pred, prob = predict_weather([temp, humidity, pressure, wind])
 
-# ===============================
-# PREDICTION
-# ===============================
-pred, prob = predict_weather([temp, humidity, pressure, wind])
+    return jsonify({
+        "temp": temp,
+        "humidity": humidity,
+        "pressure": pressure,
+        "wind": wind,
+        "prediction": "Rain" if pred == 1 else "No Rain",
+        "confidence": round(prob, 2),
+        "mode": "Online" if online else "Offline"
+    })
 
-st.markdown("---")
-
-if pred == 1:
-    st.markdown(f"""
-    <div class="result-box" style="background: linear-gradient(90deg, #1e5631, #2ecc71); color:white;">
-    🌧️ <b>Rain Expected</b><br>
-    Confidence: {prob:.2f}
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown(f"""
-    <div class="result-box" style="background: linear-gradient(90deg, #1f3c88, #3498db); color:white;">
-    ☀️ <b>No Rain</b><br>
-    Confidence: {prob:.2f}
-    </div>
-    """, unsafe_allow_html=True)
-
-# ===============================
-# STATUS
-# ===============================
-if online:
-    st.info("🌐 Using LIVE weather data (Online Mode)")
-else:
-    st.warning("📴 Using Offline fallback prediction")
+if __name__ == "__main__":
+    app.run(debug=True)
