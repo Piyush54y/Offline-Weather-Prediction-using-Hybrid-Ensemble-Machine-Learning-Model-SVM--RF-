@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import requests
 import time
-import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 
@@ -17,50 +16,34 @@ st.set_page_config(layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
-# ------------------ UI ------------------
-st.markdown("""
-<style>
-body {background: linear-gradient(135deg,#0f172a,#1e293b);}
-.title {font-size:38px;font-weight:bold;color:#38bdf8;}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="title">🌦️ Weather AI PRO MAX</div>', unsafe_allow_html=True)
+st.title("🌦️ Weather AI PRO MAX")
 
 # ------------------ LOAD DATA ------------------
 @st.cache_data
 def load_data():
     if not os.path.exists("weather.csv"):
-        st.error("❌ Upload weather.csv in project folder")
+        st.error("Upload weather.csv")
         st.stop()
-
     df = pd.read_csv("weather.csv")
     return train_test_split(df, test_size=0.2, random_state=42)
 
 train_df, test_df = load_data()
 
-# ------------------ COLUMN AUTO DETECT ------------------
-def detect(df):
-    cols = df.columns
-
-    temp = next((c for c in cols if "temp" in c.lower()), None)
-    humidity = next((c for c in cols if "humidity" in c.lower()), None)
-    wind = next((c for c in cols if "wind" in c.lower()), None)
-    rain = next((c for c in cols if "precip" in c.lower()), None)
-    target = next((c for c in cols if "weather" in c.lower()), None)
-
-    return temp, humidity, wind, rain, target
-
-temp_col, hum_col, wind_col, rain_col, target_col = detect(train_df)
-
 # ------------------ FEATURES ------------------
-features = [c for c in [temp_col, hum_col, wind_col, rain_col] if c]
+features = [
+    "MinTemp","MaxTemp","Rainfall",
+    "Humidity9am","Humidity3pm",
+    "Pressure9am","Pressure3pm",
+    "Temp9am","Temp3pm"
+]
+
+target = "RainTomorrow"
 
 X_train = train_df[features]
-y_train = train_df[target_col]
+y_train = train_df[target]
 
 X_test = test_df[features]
-y_test = test_df[target_col]
+y_test = test_df[target]
 
 # ------------------ ENCODE ------------------
 le = LabelEncoder()
@@ -101,7 +84,7 @@ svm_acc = svm.score(X_test, y_test)
 hy_pred, _ = hybrid(X_test)
 hy_acc = accuracy_score(y_test, hy_pred)
 
-# ------------------ API + AQI ------------------
+# ------------------ API ------------------
 def api(city):
     url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}&aqi=yes"
     data = requests.get(url).json()
@@ -116,38 +99,23 @@ def api(city):
 # ------------------ MODE ------------------
 mode = st.radio("Mode", ["🌐 Online", "💻 Offline"])
 
-# =========================================================
-# 🌐 ONLINE
-# =========================================================
+# ================= ONLINE =================
 if mode == "🌐 Online":
-
     city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
 
     if st.button("🌍 Get Weather"):
-
         temp, hum, cond, aqi = api(city)
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🌡 Temp", f"{temp}°C")
-        c2.metric("💧 Humidity", f"{hum}%")
-        c3.metric("🌫 AQI", round(aqi,1))
+        st.metric("🌡 Temp", f"{temp}°C")
+        st.metric("💧 Humidity", f"{hum}%")
+        st.metric("🌫 AQI", round(aqi,1))
 
-        if aqi < 50:
-            st.success("🟢 Good Air")
-        elif aqi < 100:
-            st.warning("🟡 Moderate")
-        else:
-            st.error("🔴 Unhealthy")
+        st.success(cond)
 
-        st.success(f"☁️ {cond}")
-
-# =========================================================
-# 💻 OFFLINE
-# =========================================================
+# ================= OFFLINE =================
 if mode == "💻 Offline":
 
     if st.button("⚡ Predict"):
-
         sample = test_df.sample(1)
         X_input = scaler.transform(sample[features])
 
@@ -156,32 +124,29 @@ if mode == "💻 Offline":
 
         st.markdown("## 🔮 Prediction")
 
-        if "rain" in weather.lower():
-            st.success("🌧️ Rain")
-        elif "sun" in weather.lower():
-            st.success("☀️ Clear")
+        if weather == "Yes":
+            st.success("🌧️ Rain Tomorrow")
         else:
-            st.success("☁️ Cloudy")
+            st.success("☀️ No Rain Tomorrow")
 
-# =========================================================
-# 📊 PERFORMANCE
-# =========================================================
-st.markdown("## 📊 Model Performance")
+# ------------------ PERFORMANCE ------------------
+st.markdown("## 📊 Performance")
 
-c1, c2, c3 = st.columns(3)
-c1.metric("RF", f"{rf_acc:.2f}")
-c2.metric("SVM", f"{svm_acc:.2f}")
-c3.metric("Hybrid", f"{hy_acc:.2f}")
+st.write(f"RF: {rf_acc:.2f}")
+st.write(f"SVM: {svm_acc:.2f}")
+st.write(f"Hybrid: {hy_acc:.2f}")
+st.write(f"Time: {t_time:.2f}s")
 
-st.write(f"⏱ Time: {t_time:.2f}s")
-
-# =========================================================
-# 📉 HEATMAP
-# =========================================================
-st.markdown("## 📉 Confusion Matrix Heatmap")
+# ------------------ HEATMAP ------------------
+st.markdown("## 📉 Confusion Matrix")
 
 cm = confusion_matrix(y_test, hy_pred)
 
 fig, ax = plt.subplots()
-sns.heatmap(cm, annot=True, fmt='d', cmap='coolwarm', ax=ax)
+ax.imshow(cm, cmap='coolwarm')
+
+for i in range(len(cm)):
+    for j in range(len(cm[0])):
+        ax.text(j, i, cm[i][j], ha='center', va='center', color='white')
+
 st.pyplot(fig)
