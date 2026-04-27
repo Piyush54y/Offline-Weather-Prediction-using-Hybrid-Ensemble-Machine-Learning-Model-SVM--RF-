@@ -1,8 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+import streamlit as st
 import requests
 from model import predict_weather
 
-app = Flask(__name__)
+st.set_page_config(page_title="Weather AI", layout="centered")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
@@ -20,27 +20,25 @@ def get_weather(city):
     except:
         return 25, 60, 1013, 10, False
 
-@app.route("/")
-def home():
-    return render_template("index.html")
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    city = request.json.get("city")
+# UI
+st.title("🌦️ Offline + Online Weather Prediction")
 
+city = st.selectbox("Select City", ["Patna", "Delhi", "Mumbai", "Bangalore"])
+
+if st.button("Predict"):
     temp, humidity, pressure, wind, online = get_weather(city)
 
     pred, prob = predict_weather([temp, humidity, pressure, wind])
 
-    return jsonify({
-        "temp": temp,
-        "humidity": humidity,
-        "pressure": pressure,
-        "wind": wind,
-        "prediction": "Rain" if pred == 1 else "No Rain",
-        "confidence": round(prob, 2),
-        "mode": "Online" if online else "Offline"
-    })
+    st.write(f"🌡️ Temp: {temp}°C | 💧 {humidity}% | 🌪️ {wind}")
 
-if __name__ == "__main__":
-    app.run(debug=True)
+    if pred == 1:
+        st.success(f"🌧️ Rain Expected (Confidence: {prob:.2f})")
+    else:
+        st.info(f"☀️ No Rain (Confidence: {prob:.2f})")
+
+    if online:
+        st.caption("🌐 Online Mode")
+    else:
+        st.caption("📴 Offline Mode")
