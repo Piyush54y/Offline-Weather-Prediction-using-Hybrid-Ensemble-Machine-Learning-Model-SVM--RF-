@@ -14,7 +14,7 @@ st.set_page_config(page_title="Weather AI PRO", layout="wide")
 API_KEY = "efd7a881ace6419480e100155251006"
 
 # ------------------ LOAD DATA ------------------
-df = pd.read_csv("weather_data.csv")
+df = pd.read_csv("seattle-weather.csv")
 
 # Feature Engineering
 df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
