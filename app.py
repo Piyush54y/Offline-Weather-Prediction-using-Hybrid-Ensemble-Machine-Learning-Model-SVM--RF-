@@ -4,15 +4,14 @@ import numpy as np
 import time
 
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier, StackingClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 st.set_page_config(layout="wide")
 
-st.title("🌦️ Weather AI PRO MAX (Stacking Hybrid)")
+st.title("🌦️ Weather Prediction (Hybrid RF + SVM)")
 
 # ------------------ LOAD DATA ------------------
 @st.cache_data
@@ -40,47 +39,47 @@ y_train = train_df["weather"]
 X_test = test_df[features]
 y_test = test_df["weather"]
 
+# ------------------ SCALING ------------------
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
-# ------------------ TRAIN STACKING MODEL ------------------
+# ------------------ TRAIN ------------------
 @st.cache_resource
-def train_model():
+def train_models():
     start = time.time()
 
-    rf = RandomForestClassifier(n_estimators=300, max_depth=12)
-    svm = SVC(probability=True, C=10, gamma=0.1)
+    rf = RandomForestClassifier(n_estimators=500, max_depth=15, random_state=42)
+    svm = SVC(probability=True, C=20, gamma=0.05)
 
-    stack = StackingClassifier(
-        estimators=[("rf", rf), ("svm", svm)],
-        final_estimator=LogisticRegression(),
-        passthrough=True
-    )
-
-    stack.fit(X_train, y_train)
+    rf.fit(X_train, y_train)
+    svm.fit(X_train, y_train)
 
     train_time = time.time() - start
+    return rf, svm, train_time
 
-    return rf, svm, stack, train_time
+rf, svm, train_time = train_models()
 
-rf, svm, stack, train_time = train_model()
+# ------------------ HYBRID (PAPER METHOD) ------------------
+def hybrid_predict(X):
+    rf_prob = rf.predict_proba(X)
+    svm_prob = svm.predict_proba(X)
+
+    # Equal probability fusion (paper method)
+    hybrid_prob = (rf_prob + svm_prob) / 2
+
+    pred = np.argmax(hybrid_prob, axis=1)
+    return pred, hybrid_prob
 
 # ------------------ ACCURACY ------------------
-rf_acc = rf.fit(X_train, y_train).score(X_test, y_test)
-svm_acc = svm.fit(X_train, y_train).score(X_test, y_test)
-stack_acc = stack.score(X_test, y_test)
+rf_acc = rf.score(X_test, y_test)
+svm_acc = svm.score(X_test, y_test)
 
-# ------------------ BEST MODEL ------------------
-if stack_acc > rf_acc and stack_acc > svm_acc:
-    best_model = "🔥 Stacking Hybrid (Best)"
-elif rf_acc > svm_acc:
-    best_model = "🌳 Random Forest"
-else:
-    best_model = "🧠 SVM"
+hybrid_pred, _ = hybrid_predict(X_test)
+hybrid_acc = accuracy_score(y_test, hybrid_pred)
 
 # ------------------ OFFLINE AUTO MODE ------------------
-st.subheader("💻 Offline Auto Prediction (Stacking Model)")
+st.subheader("💻 Offline Auto Prediction (Paper Hybrid Model)")
 
 if st.button("⚡ Generate Prediction"):
 
@@ -94,11 +93,12 @@ if st.button("⚡ Generate Prediction"):
     X_input = scaler.transform([[temp, 5, wind, precipitation, month]])
 
     # Predictions
-    rf_pred = le.inverse_transform(rf.predict(X_input))[0]
-    svm_pred = le.inverse_transform(svm.predict(X_input))[0]
-    stack_pred = le.inverse_transform(stack.predict(X_input))[0]
+    rf_label = le.inverse_transform(rf.predict(X_input))[0]
+    svm_label = le.inverse_transform(svm.predict(X_input))[0]
 
-    conf = np.max(stack.predict_proba(X_input))
+    pred, prob = hybrid_predict(X_input)
+    hybrid_label = le.inverse_transform(pred)[0]
+    confidence = np.max(prob)
 
     # ------------------ DISPLAY ------------------
     st.markdown("### 🌍 Dataset Sample")
@@ -109,55 +109,34 @@ if st.button("⚡ Generate Prediction"):
     c4.metric("📅 Month", month)
 
     # Final Prediction
-    st.markdown("## 🔮 Final Prediction (Stacking)")
-    if stack_pred == "rain":
+    st.markdown("## 🔮 Final Prediction (Hybrid)")
+    if hybrid_label == "rain":
         st.success("🌧️ Rain Expected")
-    elif stack_pred == "sun":
+    elif hybrid_label == "sun":
         st.success("☀️ Clear Weather")
     else:
         st.success("☁️ Cloudy")
 
-    st.write(f"Confidence: {round(conf,2)}")
+    st.write(f"Confidence: {round(confidence,2)}")
 
     # ------------------ MODEL COMPARISON ------------------
     st.markdown("### 🤖 Model Comparison")
     c1, c2, c3 = st.columns(3)
 
-    c1.markdown(f"**🌳 RF**<br>{rf_pred}<br>Acc: {rf_acc:.2f}", unsafe_allow_html=True)
-    c2.markdown(f"**🧠 SVM**<br>{svm_pred}<br>Acc: {svm_acc:.2f}", unsafe_allow_html=True)
-    c3.markdown(f"**🔥 Hybrid**<br>{stack_pred}<br>Acc: {stack_acc:.2f}", unsafe_allow_html=True)
-
-    # ------------------ BEST MODEL ------------------
-    st.markdown("### 🏆 Best Model")
-    st.success(best_model)
-
-    # ------------------ AQI ------------------
-    aqi = np.random.randint(40,150)
-
-    if aqi <= 50:
-        status = "🟢 Good"
-        msg = "Air quality is clean"
-    elif aqi <= 100:
-        status = "🟡 Moderate"
-        msg = "Acceptable air"
-    else:
-        status = "🔴 Unhealthy"
-        msg = "Avoid outdoor activity"
-
-    st.markdown("### 🌫 AQI")
-    st.info(f"AQI: {aqi} | {status}")
-    st.write(msg)
+    c1.markdown(f"**🌳 RF**<br>{rf_label}<br>Acc: {rf_acc:.2f}", unsafe_allow_html=True)
+    c2.markdown(f"**🧠 SVM**<br>{svm_label}<br>Acc: {svm_acc:.2f}", unsafe_allow_html=True)
+    c3.markdown(f"**🔥 Hybrid**<br>{hybrid_label}<br>Acc: {hybrid_acc:.2f}", unsafe_allow_html=True)
 
 # ------------------ PERFORMANCE ------------------
 st.subheader("📊 Model Performance")
 
 st.write(f"RF Accuracy: {rf_acc:.2f}")
 st.write(f"SVM Accuracy: {svm_acc:.2f}")
-st.write(f"Stacking Accuracy: {stack_acc:.2f}")
+st.write(f"Hybrid Accuracy: {hybrid_acc:.2f}")
 st.write(f"⏱ Training Time: {train_time:.2f}s")
 
 # ------------------ CONFUSION MATRIX ------------------
 st.subheader("📉 Confusion Matrix")
 
-cm = confusion_matrix(y_test, stack.predict(X_test))
+cm = confusion_matrix(y_test, hybrid_pred)
 st.dataframe(cm)
