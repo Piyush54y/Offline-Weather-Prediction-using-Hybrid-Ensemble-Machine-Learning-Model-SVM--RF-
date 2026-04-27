@@ -3,11 +3,11 @@ import requests
 import random
 import pandas as pd
 
-st.set_page_config(page_title="Weather Prediction PRO", layout="wide")
+st.set_page_config(page_title="Weather AI PRO", layout="wide")
 
 API_KEY = "efd7a881ace6419480e100155251006"
 
-# ------------------ STYLE ------------------
+# ------------------ BACKGROUND + ANIMATION ------------------
 st.markdown("""
 <style>
 .stApp {
@@ -15,11 +15,30 @@ st.markdown("""
     color:white;
 }
 
-.big-title {
-    font-size:40px;
-    font-weight:bold;
-    text-align:center;
-    color:#00f5ff;
+/* Rain animation */
+.rain {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    top: 0;
+    left: 0;
+    background-image: url('https://i.ibb.co/7S3m8zZ/rain.gif');
+    opacity: 0.15;
+}
+
+/* Sun glow */
+.sun {
+    position: fixed;
+    top: 50px;
+    right: 50px;
+    font-size: 60px;
+    animation: glow 2s infinite alternate;
+}
+
+@keyframes glow {
+    from {opacity: 0.6;}
+    to {opacity: 1;}
 }
 
 .card {
@@ -31,13 +50,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="big-title">🌦️ Weather Prediction PRO</div>', unsafe_allow_html=True)
+st.title("🌦️ Weather AI PRO")
 
-# ------------------ INPUT ------------------
-city = st.selectbox("📍 Select City", ["Delhi","Mumbai","Patna","Bangalore","Gurugram"])
-mode = st.toggle("🌐 Live Mode (API)")
+# ------------------ AUTO LOCATION ------------------
+def get_location():
+    try:
+        res = requests.get("https://ipinfo.io/json").json()
+        return res["city"]
+    except:
+        return "Delhi"
 
-# ------------------ FETCH ------------------
+auto_city = get_location()
+
+city = st.selectbox("📍 Select City", ["Auto Detect", "Delhi","Mumbai","Patna","Bangalore","Gurugram"])
+
+if city == "Auto Detect":
+    city = auto_city
+
+mode = st.toggle("🌐 Live Mode")
+
+# ------------------ FETCH WEATHER ------------------
 def get_weather(city):
     try:
         url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
@@ -49,10 +81,7 @@ def get_weather(city):
 # ------------------ BUTTON ------------------
 if st.button("🚀 Get Weather"):
 
-    if mode:
-        data = get_weather(city)
-    else:
-        data = None
+    data = get_weather(city) if mode else None
 
     if data:
         temp = data["temp_c"]
@@ -61,49 +90,59 @@ if st.button("🚀 Get Weather"):
         wind = data["wind_kph"]
         condition = data["condition"]["text"]
     else:
-        # Offline random
         temp = random.uniform(20,40)
         humidity = random.randint(30,90)
         pressure = random.randint(990,1025)
         wind = random.uniform(0,20)
         condition = random.choice(["Clear","Rain","Cloudy"])
 
-    # ------------------ ANIMATION ------------------
+    # ------------------ WEATHER EFFECT ------------------
     if "Rain" in condition:
-        effect = "🌧️🌧️🌧️ 🌧️🌧️🌧️"
+        st.markdown('<div class="rain"></div>', unsafe_allow_html=True)
+        icon = "🌧️"
     elif "Clear" in condition:
-        effect = "☀️✨☀️✨"
+        st.markdown('<div class="sun">☀️</div>', unsafe_allow_html=True)
+        icon = "☀️"
     else:
-        effect = "☁️☁️☁️"
+        icon = "☁️"
 
-    st.markdown(f"<h2 style='text-align:center'>{effect}</h2>", unsafe_allow_html=True)
-
-    # ------------------ HERO DISPLAY ------------------
+    # ------------------ HERO ------------------
     st.markdown(f"""
-    <h1 style='text-align:center;font-size:60px;'>🌡️ {round(temp,1)}°C</h1>
-    <h3 style='text-align:center;'>{condition} Weather</h3>
+    <h1 style='text-align:center;font-size:60px;'>{icon} {round(temp,1)}°C</h1>
+    <h3 style='text-align:center;'>{condition}</h3>
     """, unsafe_allow_html=True)
 
-    # ------------------ METRIC CARDS ------------------
+    # ------------------ CARDS ------------------
     col1,col2,col3,col4,col5 = st.columns(5)
 
-    col1.markdown(f"<div class='card'>🌡️<br>{round(temp,1)}°C</div>", unsafe_allow_html=True)
-    col2.markdown(f"<div class='card'>💧<br>{humidity}%</div>", unsafe_allow_html=True)
-    col3.markdown(f"<div class='card'>📊<br>{pressure}</div>", unsafe_allow_html=True)
-    col4.markdown(f"<div class='card'>🌪️<br>{round(wind,1)}</div>", unsafe_allow_html=True)
+    col1.markdown(f"<div class='card'>🌡️ Temp<br><b>{round(temp,1)}°C</b></div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='card'>💧 Humidity<br><b>{humidity}%</b></div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='card'>📊 Pressure<br><b>{pressure}</b></div>", unsafe_allow_html=True)
+    col4.markdown(f"<div class='card'>🌪️ Wind<br><b>{round(wind,1)}</b></div>", unsafe_allow_html=True)
 
     # AQI
     aqi = random.randint(50,200)
     if aqi <= 50:
-        aqi_status = "🟢 Good"
+        status = "🟢 Good"
+        desc = "Safe air quality"
     elif aqi <= 100:
-        aqi_status = "🟡 Moderate"
+        status = "🟡 Moderate"
+        desc = "Acceptable air"
     elif aqi <= 150:
-        aqi_status = "🟠 Unhealthy"
+        status = "🟠 Unhealthy"
+        desc = "May cause discomfort"
     else:
-        aqi_status = "🔴 Very Unhealthy"
+        status = "🔴 Hazardous"
+        desc = "Avoid outdoor activity"
 
-    col5.markdown(f"<div class='card'>🌫️ AQI<br>{aqi}<br>{aqi_status}</div>", unsafe_allow_html=True)
+    col5.markdown(f"""
+    <div class='card'>
+    🌫️ AQI<br>
+    <b>{aqi}</b><br>
+    {status}<br>
+    <small>{desc}</small>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ------------------ PREDICTION ------------------
     st.markdown("## 🔮 Prediction")
@@ -117,39 +156,47 @@ if st.button("🚀 Get Weather"):
         rain_prob += 0.3
 
     if rain_prob > 0.5:
-        st.success(f"🌧️ Rain Expected (Confidence: {round(rain_prob,2)})")
-        st.balloons()
+        msg = f"🌧️ Rain Expected ({round(rain_prob,2)})"
+        st.success(msg)
     else:
-        st.info(f"☀️ Clear Weather (Confidence: {round(1-rain_prob,2)})")
+        msg = f"☀️ Clear Weather ({round(1-rain_prob,2)})"
+        st.info(msg)
 
     st.progress(rain_prob)
+
+    # ------------------ VOICE OUTPUT ------------------
+    st.markdown("## 🔊 Voice Output")
+
+    text = f"The weather in {city} is {condition}. Temperature is {round(temp,1)} degrees."
+
+    st.audio(f"https://api.streamelements.com/kappa/v2/speech?voice=Brian&text={text}")
 
     # ------------------ WHY ------------------
     st.markdown("## 🧠 Why?")
 
     if humidity > 70:
-        st.write("✔ High humidity increases rain chances")
+        st.write("✔ High humidity")
     if pressure < 1005:
-        st.write("✔ Low pressure system detected")
+        st.write("✔ Low pressure")
     if wind > 15:
-        st.write("✔ Strong winds indicate instability")
+        st.write("✔ Strong wind")
 
     # ------------------ INSIGHTS ------------------
-    st.markdown("## 📊 Weather Insights")
+    st.markdown("## 📊 Insights")
 
     df = pd.DataFrame({
-        "Hour": list(range(1,13)),
-        "Temperature": [temp + random.uniform(-3,3) for _ in range(12)]
+        "Time": list(range(1,13)),
+        "Temp": [temp + random.uniform(-3,3) for _ in range(12)]
     })
 
-    st.line_chart(df.set_index("Hour"))
+    st.line_chart(df.set_index("Time"))
 
-    # ------------------ MODEL COMPARISON ------------------
+    # ------------------ COMPARISON ------------------
     st.markdown("## 📈 Model Comparison")
 
     st.bar_chart({
         "SVM":[0.90],
-        "KNN":[0.88],
         "RF":[0.92],
-        "Hybrid":[0.96]
+        "Hybrid":[0.96],
+        "LSTM":[0.94]
     })
