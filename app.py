@@ -5,14 +5,13 @@ import requests
 import time
 import matplotlib.pyplot as plt
 
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
 st.set_page_config(layout="wide")
-
-API_KEY = "efd7a881ace6419480e100155251006"
 
 # ------------------ CSS ------------------
 st.markdown("""
@@ -27,33 +26,40 @@ st.markdown("""
 
 st.title("🌦️ Weather AI PRO MAX")
 
-# ------------------ LOAD TRAIN/TEST ------------------
+API_KEY = "efd7a881ace6419480e100155251006"
+
+# ------------------ LOAD DATA ------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("seattle-weather.csv")
-
-    from sklearn.model_selection import train_test_split
     train, test = train_test_split(df, test_size=0.2, random_state=42)
-
     return train, test
 
-# Encode
+train_df, test_df = load_data()
+
+# ------------------ FEATURE ENGINEERING ------------------
+for df in [train_df, test_df]:
+    df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
+    df["temp_range"] = df["temp_max"] - df["temp_min"]
+
+# ------------------ ENCODING (FIXED ERROR) ------------------
 le = LabelEncoder()
 train_df["weather"] = le.fit_transform(train_df["weather"])
 test_df["weather"] = le.transform(test_df["weather"])
 
+# ------------------ FEATURES ------------------
 X_train = train_df[["temp_avg","temp_range","wind"]]
 y_train = train_df["weather"]
 
 X_test = test_df[["temp_avg","temp_range","wind"]]
 y_test = test_df["weather"]
 
-# Scaling
+# ------------------ SCALING ------------------
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
-# ------------------ TRAIN MODEL ------------------
+# ------------------ TRAIN ------------------
 @st.cache_resource
 def train_models():
     start = time.time()
@@ -110,16 +116,18 @@ if st.button("🚀 Predict Weather"):
     c3.markdown(f"<div class='card'>📊 {pressure}</div>", unsafe_allow_html=True)
     c4.markdown(f"<div class='card'>🌪️ {wind}</div>", unsafe_allow_html=True)
 
-    # ML
-    X_input = scaler.transform([[temp,4,wind]])
+    # ML INPUT (FIXED)
+    temp_range = 5
+    X_input = scaler.transform([[temp, temp_range, wind]])
+
     ml_pred, prob = hybrid_predict(X_input)
     ml_label = le.inverse_transform(ml_pred)[0]
 
-    # API rule
-    api_label = "rain" if humidity>70 and pressure<1005 else "sun"
+    # API LOGIC
+    api_label = "rain" if humidity > 70 and pressure < 1005 else "sun"
 
-    # FINAL
-    final = ml_label if ml_label==api_label else api_label
+    # FINAL HYBRID
+    final = ml_label if ml_label == api_label else api_label
 
     st.subheader("🔥 Final Prediction")
     st.success(final.upper())
@@ -143,18 +151,18 @@ st.write(f"RF Accuracy: {rf_acc:.2f}")
 st.write(f"SVM Accuracy: {svm_acc:.2f}")
 st.write(f"⏱ Training Time: {train_time:.2f} sec")
 
-# ------------------ CONFUSION MATRIX (HEATMAP) ------------------
-st.subheader("📉 Confusion Matrix (Heatmap)")
+# ------------------ CONFUSION MATRIX ------------------
+st.subheader("📉 Confusion Matrix")
 
 cm = confusion_matrix(y_test, rf.predict(X_test))
 
 fig, ax = plt.subplots()
 ax.imshow(cm)
+
 for i in range(len(cm)):
     for j in range(len(cm)):
         ax.text(j, i, cm[i,j], ha="center", va="center")
 
-ax.set_title("Confusion Matrix")
 st.pyplot(fig)
 
 # ------------------ ROC ------------------
@@ -170,6 +178,6 @@ roc_auc = auc(fpr, tpr)
 
 fig2, ax2 = plt.subplots()
 ax2.plot(fpr, tpr)
-ax2.set_title(f"ROC Curve (AUC={roc_auc:.2f})")
+ax2.set_title(f"ROC Curve (AUC={roc_auc:.2f}")
 
 st.pyplot(fig2)
