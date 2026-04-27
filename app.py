@@ -1,64 +1,88 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import requests
 import time
-import matplotlib.pyplot as plt
-import os
 
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
-from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 
-st.set_page_config(layout="wide")
+import matplotlib.pyplot as plt
 
-API_KEY = "efd7a881ace6419480e100155251006"
+# -------------------------
+# PAGE CONFIG
+# -------------------------
+st.set_page_config(page_title="Weather AI PRO", layout="wide")
 
-st.title("🌦️ Weather AI PRO MAX")
+st.markdown("""
+<style>
+body {background-color: #0f172a; color: white;}
+.big-title {font-size: 42px; font-weight: bold;}
+.card {
+    padding: 15px;
+    border-radius: 12px;
+    background: #1e293b;
+    text-align: center;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ------------------ LOAD DATA ------------------
+st.markdown("<div class='big-title'>🌦️ Weather AI PRO (Offline ML)</div>", unsafe_allow_html=True)
+
+# -------------------------
+# LOAD DATA
+# -------------------------
 @st.cache_data
 def load_data():
-    if not os.path.exists("weather.csv"):
-        st.error("Upload weather.csv")
-        st.stop()
-    df = pd.read_csv("weather.csv")
-    return train_test_split(df, test_size=0.2, random_state=42)
+    df = pd.read_csv("seattle-weather.csv")
 
-train_df, test_df = load_data()
+    # FIX column names (important)
+    df.columns = df.columns.str.strip().str.lower()
 
-# ------------------ FEATURES ------------------
-features = [
-    "MinTemp","MaxTemp","Rainfall",
-    "Humidity9am","Humidity3pm",
-    "Pressure9am","Pressure3pm",
-    "Temp9am","Temp3pm"
-]
+    return df
 
-target = "RainTomorrow"
+df = load_data()
 
-X_train = train_df[features]
-y_train = train_df[target]
+# -------------------------
+# FEATURE ENGINEERING
+# -------------------------
+df["temp_avg"] = (df["temp_max"] + df["temp_min"]) / 2
+df["temp_range"] = df["temp_max"] - df["temp_min"]
 
-X_test = test_df[features]
-y_test = test_df[target]
+features = ["temp_avg", "temp_range", "humidity", "wind"]
+target = "weather"
 
-# ------------------ ENCODE ------------------
-le = LabelEncoder()
-y_train = le.fit_transform(y_train)
-y_test = le.transform(y_test)
+# -------------------------
+# USER CONTROL
+# -------------------------
+st.markdown("### ⚙️ Settings")
 
-# ------------------ SCALE ------------------
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
+col1, col2 = st.columns(2)
 
-# ------------------ TRAIN ------------------
-@st.cache_resource
-def train():
-    start = time.time()
+with col1:
+    random_split = st.checkbox("🔀 Randomize Train Split", value=True)
+
+with col2:
+    retrain = st.button("🔄 Retrain Model")
+
+# -------------------------
+# TRAIN MODEL FUNCTION
+# -------------------------
+def train_model(df, random_state):
+    train_df, test_df = train_test_split(
+        df, test_size=0.2, random_state=random_state
+    )
+
+    scaler = StandardScaler()
+    le = LabelEncoder()
+
+    X_train = scaler.fit_transform(train_df[features])
+    X_test = scaler.transform(test_df[features])
+
+    y_train = le.fit_transform(train_df[target])
+    y_test = le.transform(test_df[target])
 
     rf = RandomForestClassifier(n_estimators=200)
     svm = SVC(probability=True)
@@ -66,87 +90,103 @@ def train():
     rf.fit(X_train, y_train)
     svm.fit(X_train, y_train)
 
-    return rf, svm, time.time() - start
+    # Hybrid
+    rf_p = rf.predict_proba(X_test)
+    svm_p = svm.predict_proba(X_test)
 
-rf, svm, t_time = train()
+    hybrid_p = (rf_p + svm_p) / 2
+    hybrid_pred = np.argmax(hybrid_p, axis=1)
 
-# ------------------ HYBRID ------------------
-def hybrid(X):
-    rf_p = rf.predict_proba(X)
-    svm_p = svm.predict_proba(X)
-    prob = (rf_p + svm_p) / 2
-    pred = np.argmax(prob, axis=1)
-    return pred, prob
+    acc = accuracy_score(y_test, hybrid_pred)
+    cm = confusion_matrix(y_test, hybrid_pred)
 
-# ------------------ ACCURACY ------------------
-rf_acc = rf.score(X_test, y_test)
-svm_acc = svm.score(X_test, y_test)
-hy_pred, _ = hybrid(X_test)
-hy_acc = accuracy_score(y_test, hy_pred)
+    return {
+        "rf": rf,
+        "svm": svm,
+        "scaler": scaler,
+        "le": le,
+        "acc": acc,
+        "cm": cm,
+        "X_test": X_test,
+        "y_test": y_test
+    }
 
-# ------------------ API ------------------
-def api(city):
-    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}&aqi=yes"
-    data = requests.get(url).json()
+# -------------------------
+# TRAIN / RETRAIN LOGIC
+# -------------------------
+if "model_data" not in st.session_state or retrain:
+    rs = None if random_split else 42
+    st.session_state.model_data = train_model(df, rs)
 
-    temp = data["current"]["temp_c"]
-    humidity = data["current"]["humidity"]
-    cond = data["current"]["condition"]["text"]
-    aqi = data["current"]["air_quality"]["pm2_5"]
+model_data = st.session_state.model_data
 
-    return temp, humidity, cond, aqi
+# -------------------------
+# RANDOM PREDICTION
+# -------------------------
+sample = df.sample(1)
 
-# ------------------ MODE ------------------
-mode = st.radio("Mode", ["🌐 Online", "💻 Offline"])
+X_sample = model_data["scaler"].transform(sample[features])
 
-# ================= ONLINE =================
-if mode == "🌐 Online":
-    city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
+rf_p = model_data["rf"].predict_proba(X_sample)
+svm_p = model_data["svm"].predict_proba(X_sample)
 
-    if st.button("🌍 Get Weather"):
-        temp, hum, cond, aqi = api(city)
+hybrid_p = (rf_p + svm_p) / 2
+pred = np.argmax(hybrid_p, axis=1)[0]
 
-        st.metric("🌡 Temp", f"{temp}°C")
-        st.metric("💧 Humidity", f"{hum}%")
-        st.metric("🌫 AQI", round(aqi,1))
+label = model_data["le"].inverse_transform([pred])[0]
+conf = np.max(hybrid_p)
 
-        st.success(cond)
+# -------------------------
+# UI DISPLAY
+# -------------------------
+st.markdown("### 🔮 Prediction")
 
-# ================= OFFLINE =================
-if mode == "💻 Offline":
+emoji_map = {
+    "rain": "🌧️",
+    "sun": "☀️",
+    "fog": "🌫️",
+    "snow": "❄️",
+    "drizzle": "🌦️"
+}
 
-    if st.button("⚡ Predict"):
-        sample = test_df.sample(1)
-        X_input = scaler.transform(sample[features])
+emoji = emoji_map.get(label, "🌤️")
 
-        pred, prob = hybrid(X_input)
-        weather = le.inverse_transform(pred)[0]
+st.success(f"{emoji} **{label.upper()}** (Confidence: {conf:.2f})")
 
-        st.markdown("## 🔮 Prediction")
+# -------------------------
+# MODEL PERFORMANCE
+# -------------------------
+st.markdown("### 📊 Model Performance")
 
-        if weather == "Yes":
-            st.success("🌧️ Rain Tomorrow")
-        else:
-            st.success("☀️ No Rain Tomorrow")
+st.write(f"🎯 Hybrid Accuracy: **{model_data['acc']:.2f}**")
 
-# ------------------ PERFORMANCE ------------------
-st.markdown("## 📊 Performance")
-
-st.write(f"RF: {rf_acc:.2f}")
-st.write(f"SVM: {svm_acc:.2f}")
-st.write(f"Hybrid: {hy_acc:.2f}")
-st.write(f"Time: {t_time:.2f}s")
-
-# ------------------ HEATMAP ------------------
-st.markdown("## 📉 Confusion Matrix")
-
-cm = confusion_matrix(y_test, hy_pred)
+# -------------------------
+# CONFUSION MATRIX (DYNAMIC)
+# -------------------------
+st.markdown("### 📊 Confusion Matrix")
 
 fig, ax = plt.subplots()
-ax.imshow(cm, cmap='coolwarm')
 
-for i in range(len(cm)):
-    for j in range(len(cm[0])):
-        ax.text(j, i, cm[i][j], ha='center', va='center', color='white')
+ax.imshow(model_data["cm"])
+ax.set_title("Confusion Matrix")
+
+for i in range(model_data["cm"].shape[0]):
+    for j in range(model_data["cm"].shape[1]):
+        ax.text(j, i, model_data["cm"][i, j],
+                ha="center", va="center", color="white")
 
 st.pyplot(fig)
+
+# -------------------------
+# EXPLANATION
+# -------------------------
+st.markdown("### 🧠 Explanation")
+
+st.info("""
+✔ Model retrains when you click button  
+✔ Random split makes results dynamic  
+✔ Hybrid = RF + SVM average  
+✔ Confusion matrix changes after retrain  
+
+👉 If matrix doesn't change → model not retrained
+""")
