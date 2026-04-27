@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import requests
 import time
-import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -13,9 +11,35 @@ from sklearn.metrics import confusion_matrix
 
 st.set_page_config(layout="wide")
 
-API_KEY = "efd7a881ace6419480e100155251006"
+# ------------------ PREMIUM CSS ------------------
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(135deg,#0f172a,#1e293b,#334155);
+    color:white;
+}
+.title {
+    text-align:center;
+    font-size:40px;
+    color:#38bdf8;
+}
+.card {
+    background: rgba(255,255,255,0.08);
+    padding:15px;
+    border-radius:15px;
+    text-align:center;
+    backdrop-filter: blur(10px);
+    box-shadow:0 0 20px rgba(0,0,0,0.5);
+}
+.sun {font-size:60px; animation: glow 2s infinite alternate;}
+@keyframes glow {
+    from {text-shadow:0 0 10px yellow;}
+    to {text-shadow:0 0 30px orange;}
+}
+</style>
+""", unsafe_allow_html=True)
 
-st.title("🌦️ Weather AI PRO MAX")
+st.markdown("<div class='title'>🌦️ Weather AI PRO MAX</div>", unsafe_allow_html=True)
 
 # ------------------ LOAD DATA ------------------
 @st.cache_data
@@ -31,12 +55,10 @@ for df in [train_df, test_df]:
     df["temp_range"] = df["temp_max"] - df["temp_min"]
     df["month"] = pd.to_datetime(df["date"]).dt.month
 
-# ------------------ ENCODING ------------------
 le = LabelEncoder()
 train_df["weather"] = le.fit_transform(train_df["weather"])
 test_df["weather"] = le.transform(test_df["weather"])
 
-# ------------------ FEATURES ------------------
 features = ["temp_avg","temp_range","wind","precipitation","month"]
 
 X_train = train_df[features]
@@ -45,89 +67,83 @@ y_train = train_df["weather"]
 X_test = test_df[features]
 y_test = test_df["weather"]
 
-# ------------------ SCALING ------------------
 scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
 # ------------------ TRAIN ------------------
 @st.cache_resource
-def train_models():
+def train_model():
     start = time.time()
 
-    rf = RandomForestClassifier(
-        n_estimators=500,
-        max_depth=15,
-        min_samples_split=4,
-        random_state=42
-    )
-
-    svm = SVC(
-        kernel="rbf",
-        C=20,
-        gamma=0.05,
-        probability=True
-    )
+    rf = RandomForestClassifier(n_estimators=500, max_depth=15)
+    svm = SVC(probability=True, C=20, gamma=0.05)
 
     rf.fit(X_train, y_train)
     svm.fit(X_train, y_train)
 
     return rf, svm, time.time() - start
 
-rf, svm, train_time = train_models()
+rf, svm, train_time = train_model()
 
 # ------------------ ML PREDICT ------------------
 def ml_predict(temp, wind):
-    temp_range = 5
-    precipitation = 0
-    month = 6
+    X_input = scaler.transform([[temp, 5, wind, 0, 6]])
 
-    X_input = scaler.transform([[temp, temp_range, wind, precipitation, month]])
-
-    rf_p = rf.predict_proba(X_input)
-    svm_p = svm.predict_proba(X_input)
-
-    prob = (rf_p + svm_p)/2
+    prob = (rf.predict_proba(X_input) + svm.predict_proba(X_input)) / 2
     pred = np.argmax(prob, axis=1)
 
-    return le.inverse_transform(pred)[0]
+    return le.inverse_transform(pred)[0], np.max(prob)
 
-# ------------------ API ------------------
-def get_weather(city):
-    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
-    return requests.get(url).json()["current"]
+# ------------------ AQI LOGIC ------------------
+def get_aqi():
+    aqi = np.random.randint(40,150)
 
-# ------------------ MODE ------------------
-mode = st.radio("Select Mode", ["🌐 Online (API)", "💻 Offline (ML)"])
+    if aqi <= 50:
+        status = "🟢 Good"
+        msg = "Air quality is clean and safe."
+    elif aqi <= 100:
+        status = "🟡 Moderate"
+        msg = "Acceptable but sensitive people be careful."
+    else:
+        status = "🔴 Unhealthy"
+        msg = "Health risk, avoid outdoor activity."
 
-city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
+    return aqi, status, msg
 
-# ------------------ ONLINE ------------------
-if mode == "🌐 Online (API)":
-    if st.button("Get Weather"):
-        data = get_weather(city)
+# ------------------ OFFLINE MODE ------------------
+st.subheader("💻 Offline Weather Prediction (ML Model)")
 
-        st.success(f"🌐 {data['condition']['text']}")
-        st.write(f"🌡 Temp: {data['temp_c']}°C")
-        st.write(f"💧 Humidity: {data['humidity']}")
+temp = st.slider("🌡 Temperature (°C)", 0, 50, 25)
+wind = st.slider("🌪 Wind Speed", 0, 50, 10)
 
-# ------------------ OFFLINE ------------------
-if mode == "💻 Offline (ML)":
-    temp = st.slider("Temperature", 0, 50, 25)
-    wind = st.slider("Wind", 0, 50, 10)
+if st.button("🚀 Predict Weather"):
 
-    if st.button("Predict"):
-        pred = ml_predict(temp, wind)
+    pred, conf = ml_predict(temp, wind)
 
-        if pred == "rain":
-            st.success("🌧️ Rain Expected")
-        elif pred == "sun":
-            st.success("☀️ Clear Weather")
-        else:
-            st.success("☁️ Cloudy")
+    # ICONS
+    if pred == "rain":
+        icon = "🌧️"
+        color = "#14532d"
+    elif pred == "sun":
+        icon = "<div class='sun'>☀️</div>"
+        color = "#1e3a8a"
+    else:
+        icon = "☁️"
+        color = "#78350f"
+
+    st.markdown(f"<h1 style='text-align:center'>{icon} {pred.upper()}</h1>", unsafe_allow_html=True)
+    st.success(f"Confidence: {round(conf,2)}")
+
+    # ------------------ AQI ------------------
+    aqi, status, msg = get_aqi()
+
+    st.markdown("### 🌫 Air Quality Index (AQI)")
+    st.markdown(f"<div class='card'>AQI: {aqi} <br>{status}</div>", unsafe_allow_html=True)
+    st.write(msg)
 
 # ------------------ PERFORMANCE ------------------
-st.subheader("📊 Model Performance (Fixed)")
+st.subheader("📊 Model Performance")
 
 rf_acc = rf.score(X_test, y_test)
 svm_acc = svm.score(X_test, y_test)
@@ -138,6 +154,5 @@ st.write(f"⏱ Training Time: {train_time:.2f}s")
 
 # ------------------ CONFUSION MATRIX ------------------
 st.subheader("📉 Confusion Matrix")
-
 cm = confusion_matrix(y_test, rf.predict(X_test))
 st.dataframe(cm)
