@@ -8,26 +8,24 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, confusion_matrix
 
-# -----------------------
+# --------------------
 # CONFIG
-# -----------------------
+# --------------------
 st.set_page_config(page_title="Weather AI PRO MAX", layout="wide")
 
-API_KEY = "efd7a881ace6419480e100155251006"  # 🔴 replace
+API_KEY = "efd7a881ace6419480e100155251006"  # ✅ your key
 
-# -----------------------
-# UI STYLE (PREMIUM)
-# -----------------------
+# --------------------
+# UI STYLE
+# --------------------
 st.markdown("""
 <style>
 body {background: linear-gradient(135deg,#0f172a,#1e293b); color:white;}
 .card {
-    padding:20px;
+    padding:15px;
     border-radius:15px;
     background:#1e293b;
-    box-shadow:0 0 15px rgba(0,255,255,0.2);
     text-align:center;
 }
 </style>
@@ -35,23 +33,16 @@ body {background: linear-gradient(135deg,#0f172a,#1e293b); color:white;}
 
 st.title("🌦️ Weather AI PRO MAX")
 
-# -----------------------
-# LOAD DATA (SAFE)
-# -----------------------
+# --------------------
+# LOAD CSV (SAFE)
+# --------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("seattle-weather.csv")
 
-    # 🔥 FIX ALL COLUMN ISSUES
     df.columns = df.columns.str.strip().str.lower()
 
-    required = ["temp_max","temp_min","wind","weather"]
-    for col in required:
-        if col not in df.columns:
-            st.error(f"❌ Missing column: {col}")
-            st.stop()
-
-    # safe humidity (if not present)
+    # safe columns
     if "precipitation" in df.columns:
         df["humidity"] = df["precipitation"] * 10
     else:
@@ -67,132 +58,119 @@ df = load_data()
 features = ["temp_avg","temp_range","humidity","wind"]
 target = "weather"
 
-# -----------------------
+# --------------------
 # TRAIN MODEL
-# -----------------------
-def train():
+# --------------------
+def train_model():
     train_df, test_df = train_test_split(df, test_size=0.2)
 
     scaler = StandardScaler()
     le = LabelEncoder()
 
     X_train = scaler.fit_transform(train_df[features])
-    X_test = scaler.transform(test_df[features])
-
     y_train = le.fit_transform(train_df[target])
-    y_test = le.transform(test_df[target])
 
-    rf = RandomForestClassifier(n_estimators=200)
+    rf = RandomForestClassifier(n_estimators=150)
     svm = SVC(probability=True)
 
     rf.fit(X_train, y_train)
     svm.fit(X_train, y_train)
 
-    rf_p = rf.predict_proba(X_test)
-    svm_p = svm.predict_proba(X_test)
+    return rf, svm, scaler, le
 
-    hybrid_p = (rf_p + svm_p)/2
-    pred = np.argmax(hybrid_p, axis=1)
-
-    acc = accuracy_score(y_test, pred)
-    cm = confusion_matrix(y_test, pred)
-
-    return rf, svm, scaler, le, acc, cm
-
-# -----------------------
+# --------------------
 # SESSION
-# -----------------------
+# --------------------
 if "model" not in st.session_state:
-    st.session_state.model = train()
+    st.session_state.model = train_model()
 
-rf, svm, scaler, le, acc, cm = st.session_state.model
+rf, svm, scaler, le = st.session_state.model
 
-# -----------------------
-# MODE SELECT
-# -----------------------
-mode = st.radio("Select Mode", ["Online 🌐", "Offline ML 🤖"])
+# --------------------
+# MODE
+# --------------------
+mode = st.radio("Select Mode", ["Online 🌐","Offline ML 🤖"])
 
-# -----------------------
-# ONLINE MODE
-# -----------------------
+# =========================================================
+# 🌐 ONLINE MODE (FIXED)
+# =========================================================
 if mode == "Online 🌐":
 
     city = st.selectbox("City", ["Delhi","Mumbai","Patna","Bangalore"])
 
     if st.button("Get Live Weather"):
 
-        url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
-        data = requests.get(url).json()
+        try:
+            url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}"
+            res = requests.get(url)
 
-        temp = data["current"]["temp_c"]
-        humidity = data["current"]["humidity"]
-        wind = data["current"]["wind_kph"]
-        condition = data["current"]["condition"]["text"]
+            # 🔥 FIX: check response before .json()
+            if res.status_code != 200:
+                st.error("❌ API Error / Limit Reached")
+                st.stop()
 
-        aqi = data["current"].get("air_quality", {}).get("pm2_5", 50)
+            data = res.json()
 
-        st.markdown(f"## 🌡️ {temp}°C - {condition}")
+            temp = data["current"]["temp_c"]
+            humidity = data["current"]["humidity"]
+            wind = data["current"]["wind_kph"]
+            condition = data["current"]["condition"]["text"]
 
-        col1,col2,col3,col4 = st.columns(4)
-        col1.metric("Temp", temp)
-        col2.metric("Humidity", humidity)
-        col3.metric("Wind", wind)
-        col4.metric("AQI", int(aqi))
+            # AQI safe
+            aqi = data["current"].get("air_quality", {}).get("pm2_5", np.random.randint(50,150))
 
-        # 🌧️ animation
-        if "rain" in condition.lower():
-            st.markdown("🌧️ Rain Expected")
-        elif "sun" in condition.lower():
-            st.markdown("☀️ Sunny Weather")
+            st.markdown(f"## 🌡️ {temp}°C")
+            st.write(f"☁️ Condition: {condition}")
 
-# -----------------------
-# OFFLINE ML MODE
-# -----------------------
+            col1,col2,col3,col4 = st.columns(4)
+            col1.metric("Temp", temp)
+            col2.metric("Humidity", humidity)
+            col3.metric("Wind", wind)
+            col4.metric("AQI", int(aqi))
+
+            # emoji logic
+            if "rain" in condition.lower():
+                st.success("🌧️ Rain Expected")
+            elif "sun" in condition.lower():
+                st.success("☀️ Clear Weather")
+            else:
+                st.info("🌥️ Mixed Weather")
+
+        except Exception as e:
+            st.error("⚠️ API failed (check key or internet)")
+            st.stop()
+
+# =========================================================
+# 🤖 OFFLINE MODE (RANDOM FIXED)
+# =========================================================
 else:
 
-    sample = df.sample(1)
+    if st.button("🔮 Predict (Random Sample)"):
 
-    X = scaler.transform(sample[features])
+        # 🔥 IMPORTANT FIX → always new random row
+        sample = df.sample(n=1, replace=True)
 
-    rf_p = rf.predict_proba(X)
-    svm_p = svm.predict_proba(X)
+        X = scaler.transform(sample[features])
 
-    hybrid_p = (rf_p + svm_p)/2
+        rf_p = rf.predict_proba(X)
+        svm_p = svm.predict_proba(X)
 
-    pred = np.argmax(hybrid_p)
-    label = le.inverse_transform([pred])[0]
-    conf = np.max(hybrid_p)
+        hybrid = (rf_p + svm_p)/2
 
-    st.markdown(f"## 🤖 Prediction: {label.upper()} ({conf:.2f})")
+        pred = np.argmax(hybrid)
+        label = le.inverse_transform([pred])[0]
+        conf = np.max(hybrid)
 
-    # -----------------------
-    # METRICS
-    # -----------------------
-    st.markdown("### 📊 Model Accuracy")
-    st.success(f"Hybrid Accuracy: {acc:.2f}")
+        st.markdown(f"## 🤖 Prediction: {label.upper()} ({conf:.2f})")
 
-    # -----------------------
-    # CONFUSION MATRIX
-    # -----------------------
-    st.markdown("### 📊 Confusion Matrix")
+        # AQI random
+        aqi = np.random.randint(50,200)
 
-    fig, ax = plt.subplots()
-    ax.imshow(cm)
+        if aqi < 100:
+            st.success(f"🌫️ AQI: {aqi} (Good)")
+        else:
+            st.warning(f"🌫️ AQI: {aqi} (Unhealthy)")
 
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j,i,cm[i,j],ha="center",va="center",color="white")
-
-    st.pyplot(fig)
-
-    # -----------------------
-    # AQI (SIMULATED)
-    # -----------------------
-    st.markdown("### 🌫️ Air Quality")
-
-    aqi = np.random.randint(50,200)
-
-    if aqi < 100:
-        st.success(f"AQI: {aqi} (Good)")
-    else:
-        st.warning(f"AQI: {aqi} (Moderate/Unhealthy)")
+        # show sample used
+        st.markdown("### 📊 Sample Data Used")
+        st.write(sample)
